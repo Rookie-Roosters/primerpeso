@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// gRPC protocol.
-///
-/// {@canonicalFor status.Status}
-/// {@canonicalFor status.StatusParser}
-library protocol_grpc;
-
+// gRPC protocol.
+//
+// Canonical docs originally pointed at status.Status and status.StatusParser.
 export '../src/grpc/status.dart' show Status, StatusParser;
 export '../src/grpc/transport.dart' show Transport;

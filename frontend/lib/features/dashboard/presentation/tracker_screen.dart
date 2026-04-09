@@ -7,7 +7,6 @@ import 'package:shard/shard.dart';
 import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
 import '../../auth/shards/auth_shard.dart';
-import '../../auth/domain/auth_state.dart';
 
 // ── Placeholder data models ─────────────────────────────────────────────────
 
@@ -124,6 +123,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
       }
       return;
     }
+    final receiptRepository = AppScope.of(context).receiptRepository;
 
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -165,7 +165,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
       }
 
       final bytes = await image.readAsBytes();
-      final draft = await AppScope.of(context).receiptRepository.uploadReceipt(
+      final draft = await receiptRepository.uploadReceipt(
         accessToken: accessToken,
         content: bytes,
         filename: image.name,
