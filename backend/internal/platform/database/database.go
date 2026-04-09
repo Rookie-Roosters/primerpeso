@@ -64,7 +64,11 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool, schema string) error
 		if !safeSchemaName.MatchString(schema) {
 			return fmt.Errorf("invalid database schema name %q", schema)
 		}
-		migrationTable = quoteIdent(schema) + ".app_schema_migrations"
+		q := quoteIdent(schema)
+		if _, err := pool.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+q); err != nil {
+			return fmt.Errorf("ensure database schema: %w", err)
+		}
+		migrationTable = q + ".app_schema_migrations"
 	}
 
 	if _, err := pool.Exec(ctx, fmt.Sprintf(`

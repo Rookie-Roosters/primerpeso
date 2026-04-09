@@ -57,8 +57,12 @@ services:
         value: ${primerpeso-db.DATABASE_URL}
         scope: RUN_TIME
         type: GENERAL
-      # Leave DATABASE_SCHEMA unset on DO App Platform *dev* DB (no SQL console for GRANTs).
-      # Optional: set to e.g. primerpeso only on Postgres where you created that schema as admin.
+      # App Platform dev DB users often lack CREATE on schema public; use a dedicated schema.
+      # RunMigrations creates this schema if missing (CREATE SCHEMA IF NOT EXISTS).
+      - key: DATABASE_SCHEMA
+        value: primerpeso
+        scope: RUN_TIME
+        type: GENERAL
       - key: ALLOWED_ORIGINS
         value: "*"
         scope: RUN_TIME

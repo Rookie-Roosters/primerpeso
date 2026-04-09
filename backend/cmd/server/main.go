@@ -51,9 +51,8 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
 
-	// Optional dedicated schema (e.g. self-hosted Postgres). Do not set DATABASE_SCHEMA on
-	// DigitalOcean App Platform dev DBs — there is no SQL console to GRANT CREATE, and
-	// EnsureSchema would fail. Use public only; for full schema control use Managed PostgreSQL.
+	// Optional dedicated schema (e.g. self-hosted Postgres, or DO App Platform dev DB when the
+	// role cannot CREATE in public). RunMigrations creates the schema if missing.
 	if strings.TrimSpace(cfg.DatabaseSchema) != "" {
 		u, err := database.WithSearchPath(cfg.DatabaseURL, cfg.DatabaseSchema)
 		if err != nil {
