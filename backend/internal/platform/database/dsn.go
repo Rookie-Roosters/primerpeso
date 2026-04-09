@@ -1,19 +1,16 @@
 package database
 
 import (
-	"context"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var safeSchemaName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
 // WithSearchPath appends libpq options so every client (pgx, Authula, etc.) uses the schema first.
-// Use for PostgreSQL 15+ / managed DBs where CREATE on schema public is revoked for the app role.
+// The schema must already exist (run migrations / CREATE SCHEMA as a DB admin). Not used for DO App Platform dev DBs.
 func WithSearchPath(databaseURL, schema string) (string, error) {
 	schema = strings.TrimSpace(schema)
 	if schema == "" {
@@ -35,34 +32,6 @@ func WithSearchPath(databaseURL, schema string) (string, error) {
 	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
-}
-
-// EnsureSchema creates a dedicated schema if missing (requires CREATE on the database).
-func EnsureSchema(ctx context.Context, databaseURL, schema string) error {
-	schema = strings.TrimSpace(schema)
-	if schema == "" {
-		return nil
-	}
-	if !safeSchemaName.MatchString(schema) {
-		return fmt.Errorf("invalid DATABASE_SCHEMA %q", schema)
-	}
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		return fmt.Errorf("parse database url: %w", err)
-	}
-	cfg.MaxConns = 1
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("open db for ensure schema: %w", err)
-	}
-	defer pool.Close()
-
-	_, err = pool.Exec(ctx, fmt.Sprintf(
-		`CREATE SCHEMA IF NOT EXISTS %s`, quoteIdent(schema)))
-	if err != nil {
-		return fmt.Errorf(`create schema %s: %w (if permission denied, run as DB admin: GRANT CREATE ON DATABASE "<db>" TO "<app_user>"; see scripts/digitalocean/grant-public-fallback.sql)`, schema, err)
-	}
-	return nil
 }
 
 func quoteIdent(ident string) string {

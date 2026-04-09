@@ -1,21 +1,10 @@
--- DigitalOcean App Platform *dev* PostgreSQL: the app user often cannot CREATE SCHEMA or
--- create objects in public until a database owner grants rights. Run **one** of the options
--- below in the DO database **Query** / **Console** (or psql as admin), then redeploy the API.
+-- App Platform *dev* databases have no SQL console — you cannot run GRANT yourself.
+-- Leave DATABASE_SCHEMA unset in the API app and use the default `public` schema.
+-- If you still see "permission denied for schema public", either:
+--   • Convert the component to a Managed PostgreSQL (SQL access + full roles), or
+--   • Remove and re-add the dev database after a successful deploy (per DO support docs).
 --
--- Find your app DB name and role from the connection string (or App → primerpeso-db → Connection details).
--- Names with hyphens must be double-quoted in PostgreSQL.
-
--- ---------------------------------------------------------------------------
--- Option A — Let the app use schema "primerpeso" (matches DATABASE_SCHEMA=primerpeso)
--- ---------------------------------------------------------------------------
--- Replace "primerpeso-db" with your database name and "primerpeso-db" role with your app user name.
-GRANT CREATE ON DATABASE "primerpeso-db" TO "primerpeso-db";
-
--- After redeploy, EnsureSchema can run CREATE SCHEMA primerpeso.
-
--- ---------------------------------------------------------------------------
--- Option B — Stay in schema public only (then remove DATABASE_SCHEMA in the API component)
--- ---------------------------------------------------------------------------
--- GRANT ALL PRIVILEGES ON SCHEMA public TO "primerpeso-db";
--- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "primerpeso-db";
--- GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "primerpeso-db";
+-- If you use standalone Managed PostgreSQL with an admin user, you may run:
+--   GRANT CREATE ON DATABASE "your-db" TO "your-app-user";
+--   -- and/or
+--   GRANT ALL PRIVILEGES ON SCHEMA public TO "your-app-user";

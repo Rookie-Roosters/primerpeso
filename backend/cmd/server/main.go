@@ -51,11 +51,10 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
 
+	// Optional dedicated schema (e.g. self-hosted Postgres). Do not set DATABASE_SCHEMA on
+	// DigitalOcean App Platform dev DBs — there is no SQL console to GRANT CREATE, and
+	// EnsureSchema would fail. Use public only; for full schema control use Managed PostgreSQL.
 	if strings.TrimSpace(cfg.DatabaseSchema) != "" {
-		if err := database.EnsureSchema(ctx, cfg.DatabaseURL, cfg.DatabaseSchema); err != nil {
-			logger.Error("failed to ensure database schema", "error", err)
-			os.Exit(1)
-		}
 		u, err := database.WithSearchPath(cfg.DatabaseURL, cfg.DatabaseSchema)
 		if err != nil {
 			logger.Error("database search path", "error", err)
