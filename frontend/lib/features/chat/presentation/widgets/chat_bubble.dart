@@ -1,8 +1,10 @@
 import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:mix/mix.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/green_tokens.dart';
 import '../../domain/chat_message.dart';
@@ -166,9 +168,20 @@ class _MessageContent extends StatelessWidget {
     return MarkdownBody(
       data: content,
       selectable: false,
+      onTapLink: (text, href, title) {
+        final raw = href?.trim() ?? '';
+        if (raw.isEmpty) return;
+        final uri = Uri.tryParse(raw);
+        if (uri == null) return;
+        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+      },
       styleSheet: MarkdownStyleSheet(
         p: base,
         listBullet: base,
+        a: base.copyWith(
+          color: const Color(0xFF1976D2),
+          decoration: TextDecoration.underline,
+        ),
         strong: base.copyWith(fontWeight: FontWeight.w700),
         em: base.copyWith(fontStyle: FontStyle.italic),
       ),

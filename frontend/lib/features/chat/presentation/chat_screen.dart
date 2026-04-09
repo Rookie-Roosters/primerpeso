@@ -256,6 +256,11 @@ class _ChatSurfaceState extends State<_ChatSurface> {
                   'Compatibilidad: lista movimientos recientes para historial financiero.',
             ),
             AgUiToolDefinition(
+              name: 'search_aprende_y_crece',
+              description:
+                  'Consulta contenido de Aprende y Crece para educación financiera y devuelve fuentes con links específicos.',
+            ),
+            AgUiToolDefinition(
               name: 'update_movement',
               description:
                   'Actualiza un movimiento existente por referencia de comercio/tiempo/tipo.',
@@ -278,27 +283,57 @@ class _ChatSurfaceState extends State<_ChatSurface> {
         color: warmSurface,
         child: Column(
           children: [
-            const ChatHeader(),
             Expanded(
-              child: ShardBuilder<ChatShard, ChatState>(
-                builder: (context, state) {
-                  final shard = ShardProvider.of<ChatShard>(
-                    context,
-                    listen: false,
-                  );
-                  final items = [
-                    ...state.messages,
-                    if (state.draftAssistant != null) state.draftAssistant!,
-                  ];
-                  if (items.isEmpty) {
-                    return _EmptyChatHint(onSend: (text) => _send(shard, text));
-                  }
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    itemCount: items.length,
-                    itemBuilder: (context, i) => ChatBubble(message: items[i]),
-                  );
-                },
+              child: ColoredBox(
+                color: chatCanvas,
+                child: ShardBuilder<ChatShard, ChatState>(
+                  builder: (context, state) {
+                    final shard = ShardProvider.of<ChatShard>(
+                      context,
+                      listen: false,
+                    );
+                    final items = [
+                      ...state.messages,
+                      if (state.draftAssistant != null) state.draftAssistant!,
+                    ];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ColoredBox(
+                          color: warmSurface,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const ChatHeader(),
+                              Container(
+                                height: 1,
+                                color: borderSubtle,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: items.isEmpty
+                              ? SingleChildScrollView(
+                                  child: _EmptyChatHint(
+                                    onSend: (text) => _send(shard, text),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  itemCount: items.length,
+                                  itemBuilder: (context, i) => ChatBubble(
+                                    message: items[i],
+                                  ),
+                                ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
             ShardBuilder<ChatShard, ChatState>(
@@ -391,14 +426,15 @@ class _EmptyChatHint extends StatelessWidget {
   final void Function(String) onSend;
 
   static const _suggestions = [
-    '¿Cómo funciona el CAT?',
-    'Simula mi primer sueldo',
-    '¿Qué es el score crediticio?',
+    'Recordatorios',
+    'Metas financieras',
+    'Registrar gasto/ingreso',
+    'Duda financiera',
   ];
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -427,14 +463,14 @@ class _EmptyChatHint extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Cuéntame qué decisión financiera\nquieres revisar hoy.',
+            'Recordatorios, metas, movimientos o una duda:\nelige un atajo o escribe lo que necesites.',
             textAlign: TextAlign.center,
             style: TextStyle(color: inkMuted, fontSize: 15, height: 1.5),
           ),
           const SizedBox(height: 32),
           ..._suggestions.map(
             (text) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.only(bottom: 8),
               child: _SuggestionChip(text: text, onTap: () => onSend(text)),
             ),
           ),

@@ -190,8 +190,8 @@ class _TrackerScreenState extends State<TrackerScreen> {
     return ColoredBox(
       color: warmSurface,
       child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _Header(onHistoryTap: () => context.push('/history')),
             const SizedBox(height: 16),
@@ -204,91 +204,134 @@ class _TrackerScreenState extends State<TrackerScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            AnimatedBuilder(
-              animation: AppScope.ledgerRefreshOf(context),
-              builder: (context, _) {
-                return FutureBuilder<List<financev1.Expense>>(
-                  key: ValueKey(AppScope.ledgerRefreshOf(context).revision),
-                  future: AppScope.of(context).financeRepository.listExpenses(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: FAlert(
-                          variant: FAlertVariant.destructive,
-                          title: const Text('No pude cargar movimientos'),
-                          subtitle: Text(snapshot.error.toString()),
-                        ),
-                      );
-                    }
-                    if (snapshot.connectionState == ConnectionState.waiting &&
-                        !snapshot.hasData) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 40),
-                        child: Center(
-                          child: CircularProgressIndicator(color: primaryGreen),
-                        ),
-                      );
-                    }
-                    final all = snapshot.data ?? const <financev1.Expense>[];
-                    final filtered = _expensesInMonth(all, _visibleMonth);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+            Expanded(
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.bottomCenter,
+                children: [
+                  ListView(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    children: [
+                      AnimatedBuilder(
+                        animation: AppScope.ledgerRefreshOf(context),
+                        builder: (context, _) {
+                          return FutureBuilder<List<financev1.Expense>>(
+                            key: ValueKey(
+                              AppScope.ledgerRefreshOf(context).revision,
+                            ),
+                            future: AppScope.of(context)
+                                .financeRepository
+                                .listExpenses(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                  ),
+                                  child: FAlert(
+                                    variant: FAlertVariant.destructive,
+                                    title: const Text('No pude cargar movimientos'),
+                                    subtitle: Text(snapshot.error.toString()),
+                                  ),
+                                );
+                              }
+                              if (snapshot.connectionState ==
+                                      ConnectionState.waiting &&
+                                  !snapshot.hasData) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 40),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: primaryGreen,
+                                    ),
+                                  ),
+                                );
+                              }
+                              final all = snapshot.data ??
+                                  const <financev1.Expense>[];
+                              final filtered =
+                                  _expensesInMonth(all, _visibleMonth);
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                    ),
+                                    child: _LiveSummaryCard(expenses: filtered),
+                                  ),
+                                  const SizedBox(height: 28),
+                                  const _SectionHeader(
+                                    title: 'Gastos por categoría',
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _LiveCategoriesRow(expenses: filtered),
+                                  const SizedBox(height: 28),
+                                  const _SectionHeader(title: 'Apartados'),
+                                  const SizedBox(height: 12),
+                                  const _EmptyFeatureBlock(
+                                    message:
+                                        'Aquí podrás ver y administrar tus apartados cuando la función esté disponible.',
+                                  ),
+                                  const SizedBox(height: 28),
+                                  const _SectionHeader(title: 'Metas financieras'),
+                                  const SizedBox(height: 12),
+                                  const _EmptyFeatureBlock(
+                                    message:
+                                        'Podrás definir metas y seguir tu avance cuando activemos esta sección.',
+                                  ),
+                                  const SizedBox(height: 28),
+                                  const _SectionHeader(
+                                    title: 'Recordatorios y pagos recurrentes',
+                                  ),
+                                  const SizedBox(height: 12),
+                                  const _EmptyFeatureBlock(
+                                    message:
+                                        'Te avisaremos de pagos recurrentes y recordatorios cuando esté listo.',
+                                  ),
+                                  const SizedBox(height: 28),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      ),
+                      if (_uploadError != null)
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: _LiveSummaryCard(expenses: filtered),
+                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                          child: FAlert(
+                            variant: FAlertVariant.destructive,
+                            title: const Text('No pude subir el ticket'),
+                            subtitle: Text(_uploadError!),
+                          ),
                         ),
-                        const SizedBox(height: 28),
-                        const _SectionHeader(title: 'Gastos por categoría'),
-                        const SizedBox(height: 12),
-                        _LiveCategoriesRow(expenses: filtered),
-                        const SizedBox(height: 28),
-                        const _SectionHeader(title: 'Apartados'),
-                        const SizedBox(height: 12),
-                        const _EmptyFeatureBlock(
-                          message:
-                              'Aquí podrás ver y administrar tus apartados cuando la función esté disponible.',
-                        ),
-                        const SizedBox(height: 28),
-                        const _SectionHeader(title: 'Metas financieras'),
-                        const SizedBox(height: 12),
-                        const _EmptyFeatureBlock(
-                          message:
-                              'Podrás definir metas y seguir tu avance cuando activemos esta sección.',
-                        ),
-                        const SizedBox(height: 28),
-                        const _SectionHeader(
-                          title: 'Recordatorios y pagos recurrentes',
-                        ),
-                        const SizedBox(height: 12),
-                        const _EmptyFeatureBlock(
-                          message:
-                              'Te avisaremos de pagos recurrentes y recordatorios cuando esté listo.',
-                        ),
-                        const SizedBox(height: 28),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-            if (_uploadError != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: FAlert(
-                  variant: FAlertVariant.destructive,
-                  title: const Text('No pude subir el ticket'),
-                  subtitle: Text(_uploadError!),
-                ),
+                    ],
+                  ),
+                  Positioned(
+                    left: 24,
+                    right: 24,
+                    bottom: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x26000000),
+                            blurRadius: 16,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: _ScanButton(
+                        onTap: _startUpload,
+                        isBusy: _isUploading,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-            ],
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _ScanButton(onTap: _startUpload, isBusy: _isUploading),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
           ],
         ),
       ),

@@ -74,6 +74,7 @@ type Service struct {
 	finance      scoreProvider
 	receipts     receiptProvider
 	systemPrompt string
+	aprendeCrece *aprendeCreceIndex
 }
 
 func NewService(ctx context.Context, cfg config.Config, logger *slog.Logger, finance scoreProvider, receipts receiptProvider) *Service {
@@ -101,6 +102,12 @@ func NewService(ctx context.Context, cfg config.Config, logger *slog.Logger, fin
 		logger.Warn("failed to load external agent system prompt, using fallback", "path", cfg.AgentSystemPromptPath, "error", err)
 	}
 	service.systemPrompt = prompt
+	aprendeCrece, err := loadAprendeCreceIndex(cfg.AgentAprendeCrecePath)
+	if err != nil {
+		logger.Warn("failed to load aprende y crece knowledge base; tool will be disabled", "path", cfg.AgentAprendeCrecePath, "error", err)
+	} else {
+		service.aprendeCrece = aprendeCrece
+	}
 
 	return service
 }
@@ -242,6 +249,26 @@ func (s *Service) applyTools(
 		}
 		if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
 			return "", err
+		}
+	}
+
+	if shouldFetchAprendeCrece(lower) && s.aprendeCrece != nil {
+		toolCallID := uuid.NewString()
+		if err := send(toolStart(threadID, runID, toolCallID, "search_aprende_y_crece")); err != nil {
+			return "", err
+		}
+		if err := send(toolArgs(threadID, runID, toolCallID, jsonObject(map[string]any{
+			"query":       lastUserMessage,
+			"max_results": 3,
+		}))); err != nil {
+			return "", err
+		}
+		results := s.aprendeCrece.Search(lastUserMessage, 3)
+		if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+			return "", err
+		}
+		if context := formatAprendeCreceContext(results); context != "" {
+			contextParts = append(contextParts, context)
 		}
 	}
 
@@ -698,19 +725,22 @@ func (s *Service) generateText(ctx context.Context, prompt string) (string, erro
 
 func (s *Service) generateReply(ctx context.Context, request *agentv1.RunRequest, lastUserMessage, toolContext string) string {
 	if auto := extractAutoReply(toolContext); auto != "" {
-		return auto
+		auto = compactPlainURLs(auto)
+		return ensureAprendeCreceSourceLink(auto, toolContext)
 	}
 
 	prompt := buildPrompt(s.systemPrompt, request, lastUserMessage, toolContext)
 	if s.model == nil {
-		return fallbackReply(lastUserMessage, toolContext)
+		reply := compactPlainURLs(fallbackReply(lastUserMessage, toolContext))
+		return ensureAprendeCreceSourceLink(reply, toolContext)
 	}
 
 	var reply strings.Builder
 	for chunk, err := range genkit.GenerateStream(ctx, s.model, ai.WithPrompt(prompt)) {
 		if err != nil {
 			s.logger.Warn("agent generation failed, using fallback reply", "error", err)
-			return fallbackReply(lastUserMessage, toolContext)
+			reply := compactPlainURLs(fallbackReply(lastUserMessage, toolContext))
+			return ensureAprendeCreceSourceLink(reply, toolContext)
 		}
 		if chunk == nil {
 			continue
@@ -726,13 +756,32 @@ func (s *Service) generateReply(ctx context.Context, request *agentv1.RunRequest
 
 	result := strings.TrimSpace(reply.String())
 	if result == "" {
-		return fallbackReply(lastUserMessage, toolContext)
+		result = fallbackReply(lastUserMessage, toolContext)
+	}
+	if looksLikeToolCallMarkup(result) {
+		if fallback := fallbackAprendeCreceReply(toolContext); fallback != "" {
+			result = fallback
+		} else {
+			result = fallbackReply(lastUserMessage, toolContext)
+		}
 	}
 	if shouldAttemptAutoRegistration(strings.ToLower(lastUserMessage)) && looksLikeManualInstruction(result) {
-		return "Lo gestiono yo directamente. Si quieres corregir un movimiento, dime el monto final y el comercio, y lo actualizo."
+		result = "Lo gestiono yo directamente. Si quieres corregir un movimiento, dime el monto final y el comercio, y lo actualizo."
 	}
+	result = compactPlainURLs(result)
 
-	return result
+	return ensureAprendeCreceSourceLink(result, toolContext)
+}
+
+func looksLikeToolCallMarkup(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "<function_call") ||
+		strings.Contains(lower, "</function_call>") ||
+		strings.Contains(lower, "<tool_call") ||
+		strings.Contains(lower, "<argument name=")
 }
 
 func buildPrompt(systemPrompt string, request *agentv1.RunRequest, lastUserMessage, toolContext string) string {
@@ -815,6 +864,117 @@ func shouldFetchExpenses(text string) bool {
 
 func shouldFetchReceipt(text string) bool {
 	return strings.Contains(text, "ticket") || strings.Contains(text, "recibo") || strings.Contains(text, "voucher")
+}
+
+func shouldFetchAprendeCrece(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if shouldFetchReceipt(lower) {
+		return false
+	}
+	hasTopic := containsAny(
+		lower,
+		"aprende y crece",
+		"educacion financiera", "educación financiera",
+		"finanzas personales",
+		"ahorro", "ahorrar",
+		"presupuesto",
+		"deuda", "deudas",
+		"credito", "crédito",
+		"afore",
+		"inversion", "inversión", "invertir",
+		"seguros", "seguro",
+		"salud financiera",
+		"ciberseguridad",
+	)
+	if !hasTopic && !catWordPattern.MatchString(normalizeAprendeCreceText(lower)) {
+		return false
+	}
+	if containsAny(
+		lower,
+		"registra", "registrar",
+		"actualiza", "actualizar",
+		"elimina", "eliminar", "borra", "borrar",
+		"deshaz", "deshacer",
+	) &&
+		containsAny(lower, "gasto", "gastos", "ingreso", "ingresos", "movimiento", "movimientos", "historial") {
+		return false
+	}
+	return true
+}
+
+func compactPlainURLs(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return trimmed
+	}
+	matches := plainURLPattern.FindAllStringIndex(trimmed, -1)
+	if len(matches) == 0 {
+		return trimmed
+	}
+
+	urlLabels := map[string]string{}
+	labelCount := 0
+
+	var out strings.Builder
+	last := 0
+	for _, span := range matches {
+		start, end := span[0], span[1]
+		if start < last {
+			continue
+		}
+
+		out.WriteString(trimmed[last:start])
+
+		raw := trimmed[start:end]
+		url, trailing := splitURLAndTrailingPunctuation(raw)
+		if url == "" || isInsideMarkdownLink(trimmed, start) {
+			out.WriteString(raw)
+			last = end
+			continue
+		}
+
+		label, ok := urlLabels[url]
+		if !ok {
+			labelCount++
+			label = fmt.Sprintf("Fuente %d", labelCount)
+			urlLabels[url] = label
+		}
+		out.WriteString(fmt.Sprintf("[%s](%s)%s", label, url, trailing))
+		last = end
+	}
+	out.WriteString(trimmed[last:])
+	return out.String()
+}
+
+func splitURLAndTrailingPunctuation(raw string) (url, trailing string) {
+	if raw == "" {
+		return "", ""
+	}
+	end := len(raw)
+	for end > 0 {
+		switch raw[end-1] {
+		case '.', ',', ';', ':', '!', '?':
+			end--
+		default:
+			return raw[:end], raw[end:]
+		}
+	}
+	return raw, ""
+}
+
+func isInsideMarkdownLink(text string, start int) bool {
+	if start <= 0 || start > len(text)-1 {
+		return false
+	}
+	if text[start-1] != '(' {
+		return false
+	}
+	openBracket := strings.LastIndex(text[:start], "[")
+	closeBracket := strings.LastIndex(text[:start], "]")
+	return openBracket >= 0 && closeBracket > openBracket
 }
 
 func isLedgerRelated(text string) bool {
@@ -1222,6 +1382,8 @@ type manualRegistrationIntent struct {
 
 var amountPattern = regexp.MustCompile(`\d[\d\.,]*`)
 var trailingPunctuation = regexp.MustCompile(`[!?.,;:]+$`)
+var plainURLPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
+var catWordPattern = regexp.MustCompile(`\bcat\b`)
 
 func parseManualRegistrationIntent(text string) (*manualRegistrationIntent, bool) {
 	lower := strings.ToLower(text)

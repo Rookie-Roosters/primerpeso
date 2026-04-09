@@ -43,6 +43,7 @@ type Config struct {
 	XAIBaseURL            string `env:"XAI_BASE_URL" envDefault:"https://api.x.ai/v1"`
 	XAIModel              string `env:"XAI_MODEL" envDefault:"grok-4-1-fast-reasoning"`
 	AgentSystemPromptPath string `env:"AGENT_SYSTEM_PROMPT_PATH" envDefault:"internal/agent/context/system_prompt.md"`
+	AgentAprendeCrecePath string `env:"AGENT_APRENDE_CRECE_PATH" envDefault:"internal/agent/context/banco-azteca-finanzas-personales.md"`
 
 	JWTAccessTTL  time.Duration `env:"JWT_ACCESS_TTL" envDefault:"15m"`
 	JWTRefreshTTL time.Duration `env:"JWT_REFRESH_TTL" envDefault:"168h"`
