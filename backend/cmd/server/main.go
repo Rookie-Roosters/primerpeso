@@ -51,8 +51,8 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
 
-	// Optional dedicated schema (e.g. self-hosted Postgres, or DO App Platform dev DB when the
-	// role cannot CREATE in public). RunMigrations creates the schema if missing.
+	// Optional dedicated schema (e.g. self-hosted or Managed PostgreSQL). RunMigrations runs
+	// CREATE SCHEMA IF NOT EXISTS when set. Do not set on App Platform dev DBs (public only).
 	if strings.TrimSpace(cfg.DatabaseSchema) != "" {
 		u, err := database.WithSearchPath(cfg.DatabaseURL, cfg.DatabaseSchema)
 		if err != nil {

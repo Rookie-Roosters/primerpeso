@@ -15,13 +15,14 @@ alerts:
   - rule: DEPLOYMENT_FAILED
 
 databases:
-  - name: primerpeso-db
+  # Renamed from primerpeso-db to force a fresh dev DB when grants on `public` are stuck
+  # after failed deploys (see DO: permission denied for schema public in dev databases).
+  - name: primerpeso-pg
     engine: PG
     version: "16"
     production: false
-    # Dev DB: db_name must match this component name or be omitted (DO API rule).
-    db_name: primerpeso-db
-    db_user: primerpeso-db
+    db_name: primerpeso-pg
+    db_user: primerpeso-pg
 
 services:
   - name: api
@@ -54,15 +55,11 @@ services:
         scope: RUN_TIME
         type: GENERAL
       - key: DATABASE_URL
-        value: ${primerpeso-db.DATABASE_URL}
+        value: ${primerpeso-pg.DATABASE_URL}
         scope: RUN_TIME
         type: GENERAL
-      # App Platform dev DB users often lack CREATE on schema public; use a dedicated schema.
-      # RunMigrations creates this schema if missing (CREATE SCHEMA IF NOT EXISTS).
-      - key: DATABASE_SCHEMA
-        value: primerpeso
-        scope: RUN_TIME
-        type: GENERAL
+      # Leave DATABASE_SCHEMA unset: App Platform dev DBs only support the default `public`
+      # schema (no CREATE SCHEMA). Use Managed PostgreSQL + DATABASE_SCHEMA for isolation.
       - key: ALLOWED_ORIGINS
         value: "*"
         scope: RUN_TIME
