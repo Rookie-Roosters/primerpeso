@@ -1270,6 +1270,7 @@ func (s *Service) generateReply(ctx context.Context, request *agentv1.RunRequest
 	if result == "" {
 		result = fallbackReply(lastUserMessage, toolContext)
 	}
+	result = stripLeadingToolArgsArtifacts(result)
 	if looksLikeToolCallMarkup(result) {
 		if fallback := fallbackAprendeCreceReply(toolContext); fallback != "" {
 			result = fallback
@@ -1293,7 +1294,9 @@ func looksLikeToolCallMarkup(text string) bool {
 	return strings.Contains(lower, "<function_call") ||
 		strings.Contains(lower, "</function_call>") ||
 		strings.Contains(lower, "<tool_call") ||
-		strings.Contains(lower, "<argument name=")
+		strings.Contains(lower, "<argument name=") ||
+		strings.Contains(lower, `"query":`) ||
+		strings.Contains(lower, `"max_results":`)
 }
 
 func buildPrompt(systemPrompt string, request *agentv1.RunRequest, lastUserMessage, toolContext string) string {
@@ -1390,6 +1393,7 @@ func shouldFetchAprendeCrece(text string) bool {
 		lower,
 		"aprende y crece",
 		"educacion financiera", "educación financiera",
+		"finanzas",
 		"finanzas personales",
 		"ahorro", "ahorrar",
 		"presupuesto",
@@ -1459,6 +1463,45 @@ func compactPlainURLs(text string) string {
 	}
 	out.WriteString(trimmed[last:])
 	return out.String()
+}
+
+func stripLeadingToolArgsArtifacts(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return trimmed
+	}
+	lines := strings.Split(trimmed, "\n")
+	start := 0
+	for start < len(lines) {
+		line := strings.TrimSpace(lines[start])
+		if line == "" {
+			start++
+			continue
+		}
+		if isToolArgsArtifactLine(line) {
+			start++
+			continue
+		}
+		break
+	}
+	if start >= len(lines) {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(lines[start:], "\n"))
+}
+
+func isToolArgsArtifactLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	if malformedToolArgsLinePattern.MatchString(lower) {
+		return true
+	}
+	return strings.HasPrefix(lower, "{\"query\"") ||
+		strings.HasPrefix(lower, "\"query\"") ||
+		strings.HasPrefix(lower, "{ \"query\"") ||
+		strings.Contains(lower, `"max_results"`)
 }
 
 func splitURLAndTrailingPunctuation(raw string) (url, trailing string) {
@@ -1921,6 +1964,7 @@ var amountPattern = regexp.MustCompile(`\d[\d\.,]*`)
 var trailingPunctuation = regexp.MustCompile(`[!?.,;:]+$`)
 var plainURLPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
 var catWordPattern = regexp.MustCompile(`\bcat\b`)
+var malformedToolArgsLinePattern = regexp.MustCompile(`^:\s*"[^"]+"\s*}\s*}?$`)
 
 func parseManualRegistrationIntent(text string) (*manualRegistrationIntent, bool) {
 	lower := strings.ToLower(text)

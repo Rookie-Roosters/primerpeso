@@ -21,6 +21,12 @@ func TestShouldFetchAprendeCreceForCATQuestion(t *testing.T) {
 	}
 }
 
+func TestShouldFetchAprendeCreceForGeneralFinanzasQuestion(t *testing.T) {
+	if !shouldFetchAprendeCrece("Quiero información para mejorar mis finanzas") {
+		t.Fatalf("expected general finance question to trigger aprende y crece search")
+	}
+}
+
 func TestShouldFetchAprendeCreceSkipsLedgerCrud(t *testing.T) {
 	if shouldFetchAprendeCrece("Registra gasto de 250 en tacos") {
 		t.Fatalf("did not expect plain ledger CRUD instruction to trigger aprende y crece search")
@@ -192,6 +198,21 @@ func TestCompactPlainURLs(t *testing.T) {
 	}
 	if strings.Contains(out, "https://www.bancoazteca.com.mx/edu-fin/cat.html para") {
 		t.Fatalf("expected plain URL to be replaced, got %q", out)
+	}
+}
+
+func TestStripLeadingToolArgsArtifacts(t *testing.T) {
+	in := strings.Join([]string{
+		`: "consejos para mejorar finanzas personales"}}`,
+		"",
+		"¡Aquí van tips clave para mejorar tus finanzas!",
+	}, "\n")
+	out := stripLeadingToolArgsArtifacts(in)
+	if strings.Contains(out, `: "consejos para mejorar finanzas personales"}}`) {
+		t.Fatalf("expected malformed tool args artifact to be removed, got %q", out)
+	}
+	if !strings.Contains(out, "¡Aquí van tips clave para mejorar tus finanzas!") {
+		t.Fatalf("expected user-facing content to be preserved, got %q", out)
 	}
 }
 
