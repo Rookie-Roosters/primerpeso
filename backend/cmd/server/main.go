@@ -64,7 +64,7 @@ func main() {
 		cfg.DatabaseURL = u
 	}
 
-	pool, err := database.Open(ctx, cfg.DatabaseURL)
+	pool, err := database.Open(ctx, cfg.DatabaseURL, cfg.DatabaseSchema)
 	if err != nil {
 		logger.Error("failed to open postgres", "error", err)
 		os.Exit(1)
@@ -72,7 +72,7 @@ func main() {
 	defer pool.Close()
 
 	if cfg.AutoMigrateApp {
-		if err := database.RunMigrations(ctx, pool); err != nil {
+		if err := database.RunMigrations(ctx, pool, cfg.DatabaseSchema); err != nil {
 			logger.Error("failed to apply app migrations", "error", err)
 			os.Exit(1)
 		}

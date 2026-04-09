@@ -9,13 +9,28 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+// Open creates a pool. If schema is non-empty (same as DATABASE_SCHEMA), each connection runs
+// SET search_path so migrations and queries use that schema (required when the role cannot CREATE in public).
+func Open(ctx context.Context, databaseURL string, schema string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
+	}
+
+	schema = strings.TrimSpace(schema)
+	if schema != "" {
+		if !safeSchemaName.MatchString(schema) {
+			return nil, fmt.Errorf("invalid database schema name %q", schema)
+		}
+		quoted := quoteIdent(schema)
+		cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, "SET search_path TO "+quoted+", public")
+			return err
+		}
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -31,7 +46,7 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
+func RunMigrations(ctx context.Context, pool *pgxpool.Pool, schema string) error {
 	appRoot, err := locateAppRoot()
 	if err != nil {
 		return err
@@ -43,16 +58,25 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
 
-	if _, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS app_schema_migrations (
+	schema = strings.TrimSpace(schema)
+	migrationTable := "app_schema_migrations"
+	if schema != "" {
+		if !safeSchemaName.MatchString(schema) {
+			return fmt.Errorf("invalid database schema name %q", schema)
+		}
+		migrationTable = quoteIdent(schema) + ".app_schema_migrations"
+	}
+
+	if _, err := pool.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
 			version TEXT PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
-	`); err != nil {
+	`, migrationTable)); err != nil {
 		return fmt.Errorf("ensure migration table: %w", err)
 	}
 
-	rows, err := pool.Query(ctx, `SELECT version FROM app_schema_migrations`)
+	rows, err := pool.Query(ctx, fmt.Sprintf(`SELECT version FROM %s`, migrationTable))
 	if err != nil {
 		return fmt.Errorf("read applied migrations: %w", err)
 	}
@@ -99,7 +123,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("apply migration %s: %w", file, err)
 		}
 
-		if _, err := tx.Exec(ctx, `INSERT INTO app_schema_migrations (version) VALUES ($1)`, file); err != nil {
+		if _, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %s (version) VALUES ($1)`, migrationTable), file); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record migration %s: %w", file, err)
 		}
