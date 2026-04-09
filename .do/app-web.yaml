@@ -31,3 +31,7 @@ services:
         value: __PRIMERPESO_API_BASE_URL__
         scope: BUILD_TIME
         type: GENERAL
+
+domains:
+  - domain: primerpeso.rookieroosters.com
+    type: PRIMARY

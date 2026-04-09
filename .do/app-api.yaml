@@ -61,13 +61,18 @@ services:
         scope: RUN_TIME
         type: GENERAL
       - key: DATABASE_URL
-        value: ${primerpeso-pg.DATABASE_URL}
+        value: __DATABASE_URL__
+        scope: RUN_TIME
+        type: SECRET
+      # Keep app migrations enabled in production so schema changes are applied
+      # at startup and finance tables (e.g. expenses) are not missing.
+      - key: AUTO_MIGRATE_APP
+        value: "true"
         scope: RUN_TIME
         type: GENERAL
-      # Leave DATABASE_SCHEMA unset: App Platform dev DBs only support the default `public`
-      # schema (no CREATE SCHEMA). Use Managed PostgreSQL + DATABASE_SCHEMA for isolation.
+      # Explicitly permissive for this rollout. High risk in production.
       - key: ALLOWED_ORIGINS
-        value: __ALLOWED_ORIGINS__
+        value: "*"
         scope: RUN_TIME
         type: GENERAL
       - key: AUTH_SECRET

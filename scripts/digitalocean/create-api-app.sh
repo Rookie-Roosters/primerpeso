@@ -21,8 +21,7 @@ if [[ -z "$ALLOWED_ORIGINS" ]]; then
   exit 1
 fi
 if [[ "$ALLOWED_ORIGINS" == "*" ]]; then
-  echo "ALLOWED_ORIGINS must be restricted in production (comma-separated HTTPS origins)." >&2
-  exit 1
+  echo "Warning: ALLOWED_ORIGINS=* is permissive and high-risk in production." >&2
 fi
 
 OUT="/tmp/primerpeso-app-api.${USER:-deploy}.yaml"

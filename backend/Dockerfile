@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=builder /out/server /app/server
 COPY sql /app/sql
+COPY internal/agent/context /app/internal/agent/context
 
 EXPOSE 8080
 
