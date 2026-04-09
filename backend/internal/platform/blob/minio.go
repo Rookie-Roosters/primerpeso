@@ -21,18 +21,23 @@ type Store interface {
 type MinIOStore struct {
 	client *minio.Client
 	bucket string
+	region string
 }
 
 func NewMinIO(cfg config.Config) (*MinIOStore, error) {
-	client, err := minio.New(cfg.MinIOEndpoint, &minio.Options{
+	opts := &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
 		Secure: cfg.MinIOUseSSL,
-	})
+	}
+	if cfg.MinIORegion != "" {
+		opts.Region = cfg.MinIORegion
+	}
+	client, err := minio.New(cfg.MinIOEndpoint, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	return &MinIOStore{client: client, bucket: cfg.MinIOBucket}, nil
+	return &MinIOStore{client: client, bucket: cfg.MinIOBucket, region: cfg.MinIORegion}, nil
 }
 
 func (s *MinIOStore) EnsureBucket(ctx context.Context) error {
@@ -43,7 +48,11 @@ func (s *MinIOStore) EnsureBucket(ctx context.Context) error {
 	if exists {
 		return nil
 	}
-	return s.client.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{})
+	opts := minio.MakeBucketOptions{}
+	if s.region != "" {
+		opts.Region = s.region
+	}
+	return s.client.MakeBucket(ctx, s.bucket, opts)
 }
 
 func (s *MinIOStore) PutObject(ctx context.Context, objectKey, contentType string, body []byte) error {

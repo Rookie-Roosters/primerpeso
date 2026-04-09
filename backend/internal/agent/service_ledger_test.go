@@ -83,6 +83,12 @@ func TestIsLedgerRelatedIncomeQuestion(t *testing.T) {
 	}
 }
 
+func TestIsLedgerRelatedColloquialExpense(t *testing.T) {
+	if !isLedgerRelated("gaste 200 en el cine") {
+		t.Fatalf("expected colloquial expense phrase to be ledger-related")
+	}
+}
+
 func TestApplyToolsPrelistFailureBlocksMutation(t *testing.T) {
 	finance := &stubFinance{listErr: errors.New("db unavailable")}
 	svc := &Service{
@@ -126,5 +132,35 @@ func TestHeuristicLedgerActionDelete(t *testing.T) {
 	}
 	if action.TemporalRef != "yesterday" {
 		t.Fatalf("expected yesterday temporal ref, got %q", action.TemporalRef)
+	}
+}
+
+func TestApplyToolsRegistersColloquialExpense(t *testing.T) {
+	finance := &stubFinance{}
+	svc := &Service{
+		logger:       slog.Default(),
+		finance:      finance,
+		receipts:     stubReceipts{},
+		systemPrompt: fallbackSystemPrompt,
+	}
+
+	request := &agentv1.RunRequest{}
+	_, err := svc.applyTools(
+		context.Background(),
+		func(*agentv1.RunEvent) error { return nil },
+		"user-1",
+		"thread-1",
+		"run-1",
+		request,
+		"Gaste 200 en el cine",
+	)
+	if err != nil {
+		t.Fatalf("applyTools returned error: %v", err)
+	}
+	if finance.listCalls != 1 {
+		t.Fatalf("expected one pre-list call, got %d", finance.listCalls)
+	}
+	if finance.registerCalls != 1 {
+		t.Fatalf("expected one register call, got %d", finance.registerCalls)
 	}
 }

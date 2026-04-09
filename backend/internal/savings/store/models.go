@@ -5,8 +5,6 @@
 package store
 
 import (
-	"encoding/json"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -77,7 +75,7 @@ type ReceiptExtraction struct {
 	TotalCurrency         string             `json:"total_currency"`
 	TotalUnits            int64              `json:"total_units"`
 	TotalNanos            int32              `json:"total_nanos"`
-	LineItems             json.RawMessage    `json:"line_items"`
+	LineItems             []byte             `json:"line_items"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
@@ -119,6 +117,6 @@ type ScoreSnapshot struct {
 	ID        uuid.UUID          `json:"id"`
 	UserID    string             `json:"user_id"`
 	Score     int32              `json:"score"`
-	Factors   json.RawMessage    `json:"factors"`
+	Factors   []byte             `json:"factors"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }

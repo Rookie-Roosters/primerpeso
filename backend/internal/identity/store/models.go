@@ -8,6 +8,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Apartado struct {
+	ID              pgtype.UUID        `json:"id"`
+	UserID          string             `json:"user_id"`
+	FinancialGoalID pgtype.UUID        `json:"financial_goal_id"`
+	Name            string             `json:"name"`
+	Description     string             `json:"description"`
+	CurrencyCode    string             `json:"currency_code"`
+	CurrentUnits    int64              `json:"current_units"`
+	CurrentNanos    int32              `json:"current_nanos"`
+	TargetUnits     int64              `json:"target_units"`
+	TargetNanos     int32              `json:"target_nanos"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type Expense struct {
 	ID                    pgtype.UUID        `json:"id"`
 	UserID                string             `json:"user_id"`
@@ -21,6 +37,20 @@ type Expense struct {
 	AmountNanos           int32              `json:"amount_nanos"`
 	OccurredAt            pgtype.Timestamptz `json:"occurred_at"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type FinancialGoal struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             string             `json:"user_id"`
+	Name               string             `json:"name"`
+	Description        string             `json:"description"`
+	TargetCurrencyCode string             `json:"target_currency_code"`
+	TargetUnits        int64              `json:"target_units"`
+	TargetNanos        int32              `json:"target_nanos"`
+	TargetDate         pgtype.Timestamptz `json:"target_date"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type MobileOauthExchange struct {
@@ -59,6 +89,27 @@ type ReceiptUpload struct {
 	KeyNonce         []byte             `json:"key_nonce"`
 	ContentSha256    string             `json:"content_sha256"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type RecurringPaymentReminder struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             string             `json:"user_id"`
+	Title              string             `json:"title"`
+	Payee              string             `json:"payee"`
+	AmountCurrencyCode string             `json:"amount_currency_code"`
+	AmountUnits        int64              `json:"amount_units"`
+	AmountNanos        int32              `json:"amount_nanos"`
+	Frequency          string             `json:"frequency"`
+	Interval           int32              `json:"interval"`
+	DayOfWeek          pgtype.Int4        `json:"day_of_week"`
+	DayOfMonth         pgtype.Int4        `json:"day_of_month"`
+	MonthOfYear        pgtype.Int4        `json:"month_of_year"`
+	LocalTime          string             `json:"local_time"`
+	Timezone           string             `json:"timezone"`
+	NextDueAt          pgtype.Timestamptz `json:"next_due_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type ScoreSnapshot struct {

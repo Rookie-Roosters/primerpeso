@@ -1,0 +1,233 @@
+syntax = "proto3";
+
+package primerpeso.savings.v1;
+
+option go_package = "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/savings/v1;savingsv1";
+
+import "google/protobuf/timestamp.proto";
+import "primerpeso/finance/v1/finance.proto";
+
+service SavingsService {
+  rpc CreateApartado(CreateApartadoRequest) returns (CreateApartadoResponse);
+  rpc GetApartado(GetApartadoRequest) returns (GetApartadoResponse);
+  rpc ListApartados(ListApartadosRequest) returns (ListApartadosResponse);
+  rpc UpdateApartado(UpdateApartadoRequest) returns (UpdateApartadoResponse);
+  rpc DeleteApartado(DeleteApartadoRequest) returns (DeleteApartadoResponse);
+
+  rpc CreateFinancialGoal(CreateFinancialGoalRequest) returns (CreateFinancialGoalResponse);
+  rpc GetFinancialGoal(GetFinancialGoalRequest) returns (GetFinancialGoalResponse);
+  rpc ListFinancialGoals(ListFinancialGoalsRequest) returns (ListFinancialGoalsResponse);
+  rpc UpdateFinancialGoal(UpdateFinancialGoalRequest) returns (UpdateFinancialGoalResponse);
+  rpc DeleteFinancialGoal(DeleteFinancialGoalRequest) returns (DeleteFinancialGoalResponse);
+
+  rpc CreateRecurringPaymentReminder(CreateRecurringPaymentReminderRequest) returns (CreateRecurringPaymentReminderResponse);
+  rpc GetRecurringPaymentReminder(GetRecurringPaymentReminderRequest) returns (GetRecurringPaymentReminderResponse);
+  rpc ListRecurringPaymentReminders(ListRecurringPaymentRemindersRequest) returns (ListRecurringPaymentRemindersResponse);
+  rpc UpdateRecurringPaymentReminder(UpdateRecurringPaymentReminderRequest) returns (UpdateRecurringPaymentReminderResponse);
+  rpc DeleteRecurringPaymentReminder(DeleteRecurringPaymentReminderRequest) returns (DeleteRecurringPaymentReminderResponse);
+}
+
+enum RecurrenceFrequency {
+  RECURRENCE_FREQUENCY_UNSPECIFIED = 0;
+  RECURRENCE_FREQUENCY_DAILY = 1;
+  RECURRENCE_FREQUENCY_WEEKLY = 2;
+  RECURRENCE_FREQUENCY_MONTHLY = 3;
+  RECURRENCE_FREQUENCY_YEARLY = 4;
+}
+
+message Apartado {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  primerpeso.finance.v1.Money current_amount = 4;
+  primerpeso.finance.v1.Money target_amount = 5;
+  optional string financial_goal_id = 6;
+  bool is_active = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message FinancialGoal {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  primerpeso.finance.v1.Money target_amount = 4;
+  primerpeso.finance.v1.Money current_amount = 5;
+  google.protobuf.Timestamp target_date = 6;
+  bool is_active = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message RecurringPaymentReminder {
+  string id = 1;
+  string title = 2;
+  string payee = 3;
+  primerpeso.finance.v1.Money amount = 4;
+  RecurrenceFrequency frequency = 5;
+  int32 interval = 6;
+  optional int32 day_of_week = 7;
+  optional int32 day_of_month = 8;
+  optional int32 month_of_year = 9;
+  string local_time = 10;
+  string timezone = 11;
+  google.protobuf.Timestamp next_due_at = 12;
+  bool is_active = 13;
+  google.protobuf.Timestamp created_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+}
+
+message CreateApartadoRequest {
+  string name = 1;
+  string description = 2;
+  primerpeso.finance.v1.Money current_amount = 3;
+  primerpeso.finance.v1.Money target_amount = 4;
+  optional string financial_goal_id = 5;
+}
+
+message CreateApartadoResponse {
+  Apartado apartado = 1;
+}
+
+message GetApartadoRequest {
+  string apartado_id = 1;
+}
+
+message GetApartadoResponse {
+  Apartado apartado = 1;
+}
+
+message ListApartadosRequest {
+  int32 page_size = 1;
+}
+
+message ListApartadosResponse {
+  repeated Apartado apartados = 1;
+}
+
+message UpdateApartadoRequest {
+  string apartado_id = 1;
+  string name = 2;
+  string description = 3;
+  primerpeso.finance.v1.Money current_amount = 4;
+  primerpeso.finance.v1.Money target_amount = 5;
+  optional string financial_goal_id = 6;
+}
+
+message UpdateApartadoResponse {
+  Apartado apartado = 1;
+}
+
+message DeleteApartadoRequest {
+  string apartado_id = 1;
+}
+
+message DeleteApartadoResponse {
+  Apartado apartado = 1;
+}
+
+message CreateFinancialGoalRequest {
+  string name = 1;
+  string description = 2;
+  primerpeso.finance.v1.Money target_amount = 3;
+  google.protobuf.Timestamp target_date = 4;
+}
+
+message CreateFinancialGoalResponse {
+  FinancialGoal financial_goal = 1;
+}
+
+message GetFinancialGoalRequest {
+  string financial_goal_id = 1;
+}
+
+message GetFinancialGoalResponse {
+  FinancialGoal financial_goal = 1;
+}
+
+message ListFinancialGoalsRequest {
+  int32 page_size = 1;
+}
+
+message ListFinancialGoalsResponse {
+  repeated FinancialGoal financial_goals = 1;
+}
+
+message UpdateFinancialGoalRequest {
+  string financial_goal_id = 1;
+  string name = 2;
+  string description = 3;
+  primerpeso.finance.v1.Money target_amount = 4;
+  google.protobuf.Timestamp target_date = 5;
+}
+
+message UpdateFinancialGoalResponse {
+  FinancialGoal financial_goal = 1;
+}
+
+message DeleteFinancialGoalRequest {
+  string financial_goal_id = 1;
+}
+
+message DeleteFinancialGoalResponse {
+  FinancialGoal financial_goal = 1;
+}
+
+message CreateRecurringPaymentReminderRequest {
+  string title = 1;
+  string payee = 2;
+  primerpeso.finance.v1.Money amount = 3;
+  RecurrenceFrequency frequency = 4;
+  int32 interval = 5;
+  optional int32 day_of_week = 6;
+  optional int32 day_of_month = 7;
+  optional int32 month_of_year = 8;
+  string local_time = 9;
+  string timezone = 10;
+}
+
+message CreateRecurringPaymentReminderResponse {
+  RecurringPaymentReminder recurring_payment_reminder = 1;
+}
+
+message GetRecurringPaymentReminderRequest {
+  string recurring_payment_reminder_id = 1;
+}
+
+message GetRecurringPaymentReminderResponse {
+  RecurringPaymentReminder recurring_payment_reminder = 1;
+}
+
+message ListRecurringPaymentRemindersRequest {
+  int32 page_size = 1;
+}
+
+message ListRecurringPaymentRemindersResponse {
+  repeated RecurringPaymentReminder recurring_payment_reminders = 1;
+}
+
+message UpdateRecurringPaymentReminderRequest {
+  string recurring_payment_reminder_id = 1;
+  string title = 2;
+  string payee = 3;
+  primerpeso.finance.v1.Money amount = 4;
+  RecurrenceFrequency frequency = 5;
+  int32 interval = 6;
+  optional int32 day_of_week = 7;
+  optional int32 day_of_month = 8;
+  optional int32 month_of_year = 9;
+  string local_time = 10;
+  string timezone = 11;
+}
+
+message UpdateRecurringPaymentReminderResponse {
+  RecurringPaymentReminder recurring_payment_reminder = 1;
+}
+
+message DeleteRecurringPaymentReminderRequest {
+  string recurring_payment_reminder_id = 1;
+}
+
+message DeleteRecurringPaymentReminderResponse {
+  RecurringPaymentReminder recurring_payment_reminder = 1;
+}

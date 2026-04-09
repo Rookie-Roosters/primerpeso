@@ -22,6 +22,7 @@ import (
 	agentv1 "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/agent/v1"
 	documentsv1 "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/documents/v1"
 	financev1 "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/finance/v1"
+	savingsv1 "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/savings/v1"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/platform/authn"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/platform/config"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/platform/connectx"
@@ -67,22 +68,42 @@ type receiptProvider interface {
 	LatestDraft(ctx context.Context, userID string) (*documentsv1.ReceiptDraft, error)
 }
 
+type savingsProvider interface {
+	CreateApartadoForUser(ctx context.Context, userID string, req *savingsv1.CreateApartadoRequest) (*savingsv1.Apartado, error)
+	GetApartadoForUser(ctx context.Context, userID, apartadoID string) (*savingsv1.Apartado, error)
+	ListApartadosForUser(ctx context.Context, userID string, limit int32) ([]*savingsv1.Apartado, error)
+	UpdateApartadoForUser(ctx context.Context, userID string, req *savingsv1.UpdateApartadoRequest) (*savingsv1.Apartado, error)
+	DeleteApartadoForUser(ctx context.Context, userID, apartadoID string) (*savingsv1.Apartado, error)
+	CreateFinancialGoalForUser(ctx context.Context, userID string, req *savingsv1.CreateFinancialGoalRequest) (*savingsv1.FinancialGoal, error)
+	GetFinancialGoalForUser(ctx context.Context, userID, goalID string) (*savingsv1.FinancialGoal, error)
+	ListFinancialGoalsForUser(ctx context.Context, userID string, limit int32) ([]*savingsv1.FinancialGoal, error)
+	UpdateFinancialGoalForUser(ctx context.Context, userID string, req *savingsv1.UpdateFinancialGoalRequest) (*savingsv1.FinancialGoal, error)
+	DeleteFinancialGoalForUser(ctx context.Context, userID, goalID string) (*savingsv1.FinancialGoal, error)
+	CreateRecurringPaymentReminderForUser(ctx context.Context, userID string, req *savingsv1.CreateRecurringPaymentReminderRequest) (*savingsv1.RecurringPaymentReminder, error)
+	GetRecurringPaymentReminderForUser(ctx context.Context, userID, reminderID string) (*savingsv1.RecurringPaymentReminder, error)
+	ListRecurringPaymentRemindersForUser(ctx context.Context, userID string, limit int32) ([]*savingsv1.RecurringPaymentReminder, error)
+	UpdateRecurringPaymentReminderForUser(ctx context.Context, userID string, req *savingsv1.UpdateRecurringPaymentReminderRequest) (*savingsv1.RecurringPaymentReminder, error)
+	DeleteRecurringPaymentReminderForUser(ctx context.Context, userID, reminderID string) (*savingsv1.RecurringPaymentReminder, error)
+}
+
 type Service struct {
 	logger       *slog.Logger
 	model        *genkit.Genkit
 	cfg          config.Config
 	finance      scoreProvider
 	receipts     receiptProvider
+	savings      savingsProvider
 	systemPrompt string
 	aprendeCrece *aprendeCreceIndex
 }
 
-func NewService(ctx context.Context, cfg config.Config, logger *slog.Logger, finance scoreProvider, receipts receiptProvider) *Service {
+func NewService(ctx context.Context, cfg config.Config, logger *slog.Logger, finance scoreProvider, receipts receiptProvider, savings savingsProvider) *Service {
 	service := &Service{
 		logger:   logger,
 		cfg:      cfg,
 		finance:  finance,
 		receipts: receipts,
+		savings:  savings,
 	}
 
 	if strings.TrimSpace(cfg.XAIAPIKey) != "" {
@@ -269,6 +290,16 @@ func (s *Service) applyTools(
 		}
 		if context := formatAprendeCreceContext(results); context != "" {
 			contextParts = append(contextParts, context)
+		}
+	}
+
+	if shouldHandleSavings(lower) && s.savings != nil {
+		savingsContext, err := s.executeSavingsAction(ctx, send, userID, threadID, runID, lastUserMessage, lower)
+		if err != nil {
+			return "", err
+		}
+		if savingsContext != "" {
+			contextParts = append(contextParts, savingsContext)
 		}
 	}
 
@@ -612,6 +643,477 @@ func (s *Service) executeDeleteMovementTool(
 	), nil
 }
 
+type savingsAction struct {
+	Entity      string
+	Action      string
+	ID          string
+	Name        string
+	Description string
+	Payee       string
+	AmountUnits int64
+	TargetUnits int64
+	Frequency   savingsv1.RecurrenceFrequency
+	Interval    int32
+	LocalTime   string
+	Timezone    string
+	DayOfWeek   *int32
+	DayOfMonth  *int32
+	MonthOfYear *int32
+}
+
+var uuidPattern = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
+var quotedTextPattern = regexp.MustCompile(`["']([^"']{2,80})["']`)
+
+func shouldHandleSavings(lower string) bool {
+	return containsAny(
+		lower,
+		"apartado", "apartados", "meta financiera", "metas financieras", "meta", "metas",
+		"recordatorio", "recordatorios", "pago recurrente", "pagos recurrentes", "recurrente",
+	)
+}
+
+func resolveSavingsAction(message, lower string) savingsAction {
+	entity := ""
+	switch {
+	case containsAny(lower, "apartado", "apartados"):
+		entity = "apartado"
+	case containsAny(lower, "meta financiera", "metas financieras", "meta", "metas"):
+		entity = "financial_goal"
+	case containsAny(lower, "recordatorio", "recordatorios", "pago recurrente", "pagos recurrentes", "recurrente"):
+		entity = "recurring_payment_reminder"
+	default:
+		return savingsAction{}
+	}
+
+	action := "list"
+	switch {
+	case containsAny(lower, "elimina", "eliminar", "borra", "borrar"):
+		action = "delete"
+	case containsAny(lower, "actualiza", "actualizar", "edita", "editar", "modifica", "modificar", "cambia", "cambiar"):
+		action = "update"
+	case containsAny(lower, "crea", "crear", "agrega", "agregar", "nuevo", "nueva", "programa", "registra", "registrar"):
+		action = "create"
+	case containsAny(lower, "detalle", "consulta", "obten", "obtén") && uuidPattern.MatchString(message):
+		action = "get"
+	case containsAny(lower, "lista", "listar", "muestra", "mostrar", "ver mis", "mis "):
+		action = "list"
+	}
+
+	id := ""
+	if match := uuidPattern.FindString(message); match != "" {
+		id = match
+	}
+
+	name := ""
+	if match := quotedTextPattern.FindStringSubmatch(message); len(match) > 1 {
+		name = strings.TrimSpace(match[1])
+	}
+	if name == "" {
+		switch entity {
+		case "apartado":
+			name = "Apartado"
+		case "financial_goal":
+			name = "Meta financiera"
+		case "recurring_payment_reminder":
+			name = "Pago recurrente"
+		}
+	}
+
+	amountUnits, _ := parseAmountUnits(message)
+	targetUnits := amountUnits
+	if targetUnits <= 0 {
+		targetUnits = 1000
+	}
+
+	frequency := savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_MONTHLY
+	switch {
+	case containsAny(lower, "diario", "diaria", "cada dia", "cada día"):
+		frequency = savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_DAILY
+	case containsAny(lower, "semanal", "cada semana"):
+		frequency = savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_WEEKLY
+	case containsAny(lower, "anual", "cada año", "cada ano"):
+		frequency = savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_YEARLY
+	}
+
+	return savingsAction{
+		Entity:      entity,
+		Action:      action,
+		ID:          id,
+		Name:        name,
+		Payee:       extractCounterparty(message, "expense"),
+		AmountUnits: amountUnits,
+		TargetUnits: targetUnits,
+		Frequency:   frequency,
+		Interval:    1,
+		LocalTime:   "09:00",
+		Timezone:    "America/Mexico_City",
+	}
+}
+
+func savingsToolName(entity, action string) string {
+	switch entity {
+	case "apartado":
+		return action + "_apartado"
+	case "financial_goal":
+		return action + "_financial_goal"
+	case "recurring_payment_reminder":
+		return action + "_recurring_payment_reminder"
+	default:
+		return "savings_tool"
+	}
+}
+
+func (s *Service) executeSavingsAction(
+	ctx context.Context,
+	send func(*agentv1.RunEvent) error,
+	userID, threadID, runID, message, lower string,
+) (string, error) {
+	action := resolveSavingsAction(message, lower)
+	if action.Entity == "" {
+		return "", nil
+	}
+
+	toolName := savingsToolName(action.Entity, action.Action)
+	toolCallID := uuid.NewString()
+	if err := send(toolStart(threadID, runID, toolCallID, toolName)); err != nil {
+		return "", err
+	}
+	if err := send(toolArgs(threadID, runID, toolCallID, jsonObject(map[string]any{
+		"entity": action.Entity,
+		"action": action.Action,
+		"id":     action.ID,
+		"name":   action.Name,
+	}))); err != nil {
+		return "", err
+	}
+
+	var stateID string
+	var reply string
+	var err error
+
+	switch action.Entity {
+	case "apartado":
+		stateID, reply, err = s.executeApartadoTool(ctx, userID, action)
+	case "financial_goal":
+		stateID, reply, err = s.executeFinancialGoalTool(ctx, userID, action)
+	case "recurring_payment_reminder":
+		stateID, reply, err = s.executeReminderTool(ctx, userID, action)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+		return "", err
+	}
+	if stateID != "" {
+		if err := send(savingsDelta(threadID, runID, action.Entity, action.Action, stateID)); err != nil {
+			return "", err
+		}
+	}
+	if reply == "" {
+		return "", nil
+	}
+	return "AUTO_REPLY:" + reply, nil
+}
+
+func (s *Service) executeApartadoTool(ctx context.Context, userID string, action savingsAction) (string, string, error) {
+	switch action.Action {
+	case "create":
+		item, err := s.savings.CreateApartadoForUser(ctx, userID, &savingsv1.CreateApartadoRequest{
+			Name:        action.Name,
+			Description: action.Description,
+			CurrentAmount: &financev1.Money{
+				CurrencyCode: "MXN",
+				Units:        maxInt64(action.AmountUnits, 0),
+			},
+			TargetAmount: &financev1.Money{
+				CurrencyCode: "MXN",
+				Units:        maxInt64(action.TargetUnits, 1),
+			},
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Apartado creado: %s.", item.GetName()), nil
+	case "get":
+		if action.ID == "" {
+			return "", "Compárteme el ID del apartado para consultarlo.", nil
+		}
+		item, err := s.savings.GetApartadoForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Apartado: %s (%d %s).", item.GetName(), item.GetCurrentAmount().GetUnits(), item.GetCurrentAmount().GetCurrencyCode()), nil
+	case "list":
+		items, err := s.savings.ListApartadosForUser(ctx, userID, 10)
+		if err != nil {
+			return "", "", err
+		}
+		if len(items) == 0 {
+			return "", "No tienes apartados activos.", nil
+		}
+		parts := make([]string, 0, minInt(len(items), 4))
+		for i, item := range items {
+			if i >= 4 {
+				break
+			}
+			parts = append(parts, item.GetName())
+		}
+		return items[0].GetId(), "Tus apartados: " + strings.Join(parts, ", ") + ".", nil
+	case "update":
+		if action.ID == "" {
+			return "", "Compárteme el ID del apartado que quieres actualizar.", nil
+		}
+		current, err := s.savings.GetApartadoForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		item, err := s.savings.UpdateApartadoForUser(ctx, userID, &savingsv1.UpdateApartadoRequest{
+			ApartadoId:  current.GetId(),
+			Name:        firstNonEmpty(action.Name, current.GetName()),
+			Description: firstNonEmpty(action.Description, current.GetDescription()),
+			CurrentAmount: &financev1.Money{
+				CurrencyCode: current.GetCurrentAmount().GetCurrencyCode(),
+				Units:        choosePositive(action.AmountUnits, current.GetCurrentAmount().GetUnits()),
+				Nanos:        current.GetCurrentAmount().GetNanos(),
+			},
+			TargetAmount: &financev1.Money{
+				CurrencyCode: current.GetTargetAmount().GetCurrencyCode(),
+				Units:        choosePositive(action.TargetUnits, current.GetTargetAmount().GetUnits()),
+				Nanos:        current.GetTargetAmount().GetNanos(),
+			},
+			FinancialGoalId: current.FinancialGoalId,
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Apartado actualizado: %s.", item.GetName()), nil
+	case "delete":
+		if action.ID == "" {
+			return "", "Compárteme el ID del apartado que quieres eliminar.", nil
+		}
+		item, err := s.savings.DeleteApartadoForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Apartado eliminado: %s.", item.GetName()), nil
+	default:
+		return "", "", nil
+	}
+}
+
+func (s *Service) executeFinancialGoalTool(ctx context.Context, userID string, action savingsAction) (string, string, error) {
+	switch action.Action {
+	case "create":
+		item, err := s.savings.CreateFinancialGoalForUser(ctx, userID, &savingsv1.CreateFinancialGoalRequest{
+			Name:        action.Name,
+			Description: action.Description,
+			TargetAmount: &financev1.Money{
+				CurrencyCode: "MXN",
+				Units:        maxInt64(action.TargetUnits, 1),
+			},
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Meta creada: %s.", item.GetName()), nil
+	case "get":
+		if action.ID == "" {
+			return "", "Compárteme el ID de la meta para consultarla.", nil
+		}
+		item, err := s.savings.GetFinancialGoalForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Meta: %s (%d/%d %s).", item.GetName(), item.GetCurrentAmount().GetUnits(), item.GetTargetAmount().GetUnits(), item.GetTargetAmount().GetCurrencyCode()), nil
+	case "list":
+		items, err := s.savings.ListFinancialGoalsForUser(ctx, userID, 10)
+		if err != nil {
+			return "", "", err
+		}
+		if len(items) == 0 {
+			return "", "No tienes metas financieras activas.", nil
+		}
+		parts := make([]string, 0, minInt(len(items), 4))
+		for i, item := range items {
+			if i >= 4 {
+				break
+			}
+			parts = append(parts, item.GetName())
+		}
+		return items[0].GetId(), "Tus metas: " + strings.Join(parts, ", ") + ".", nil
+	case "update":
+		if action.ID == "" {
+			return "", "Compárteme el ID de la meta que quieres actualizar.", nil
+		}
+		current, err := s.savings.GetFinancialGoalForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		item, err := s.savings.UpdateFinancialGoalForUser(ctx, userID, &savingsv1.UpdateFinancialGoalRequest{
+			FinancialGoalId: current.GetId(),
+			Name:            firstNonEmpty(action.Name, current.GetName()),
+			Description:     firstNonEmpty(action.Description, current.GetDescription()),
+			TargetAmount: &financev1.Money{
+				CurrencyCode: current.GetTargetAmount().GetCurrencyCode(),
+				Units:        choosePositive(action.TargetUnits, current.GetTargetAmount().GetUnits()),
+				Nanos:        current.GetTargetAmount().GetNanos(),
+			},
+			TargetDate: current.GetTargetDate(),
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Meta actualizada: %s.", item.GetName()), nil
+	case "delete":
+		if action.ID == "" {
+			return "", "Compárteme el ID de la meta que quieres eliminar.", nil
+		}
+		item, err := s.savings.DeleteFinancialGoalForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Meta eliminada: %s.", item.GetName()), nil
+	default:
+		return "", "", nil
+	}
+}
+
+func (s *Service) executeReminderTool(ctx context.Context, userID string, action savingsAction) (string, string, error) {
+	now := time.Now()
+	day := int32(now.Day())
+	month := int32(now.Month())
+	weekday := int32(now.Weekday())
+
+	ensureAnchors := func(freq savingsv1.RecurrenceFrequency, in savingsAction) (dow, dom, moy *int32) {
+		switch freq {
+		case savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_WEEKLY:
+			if in.DayOfWeek != nil {
+				return in.DayOfWeek, nil, nil
+			}
+			return &weekday, nil, nil
+		case savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_MONTHLY:
+			if in.DayOfMonth != nil {
+				return nil, in.DayOfMonth, nil
+			}
+			return nil, &day, nil
+		case savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_YEARLY:
+			dom = in.DayOfMonth
+			moy = in.MonthOfYear
+			if dom == nil {
+				dom = &day
+			}
+			if moy == nil {
+				moy = &month
+			}
+			return nil, dom, moy
+		default:
+			return nil, nil, nil
+		}
+	}
+
+	switch action.Action {
+	case "create":
+		freq := action.Frequency
+		if freq == savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_UNSPECIFIED {
+			freq = savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_MONTHLY
+		}
+		dow, dom, moy := ensureAnchors(freq, action)
+		item, err := s.savings.CreateRecurringPaymentReminderForUser(ctx, userID, &savingsv1.CreateRecurringPaymentReminderRequest{
+			Title:       action.Name,
+			Payee:       action.Payee,
+			Amount:      &financev1.Money{CurrencyCode: "MXN", Units: maxInt64(action.AmountUnits, 1)},
+			Frequency:   freq,
+			Interval:    maxInt32(action.Interval, 1),
+			DayOfWeek:   dow,
+			DayOfMonth:  dom,
+			MonthOfYear: moy,
+			LocalTime:   firstNonEmpty(action.LocalTime, "09:00"),
+			Timezone:    firstNonEmpty(action.Timezone, "America/Mexico_City"),
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Recordatorio creado: %s.", item.GetTitle()), nil
+	case "get":
+		if action.ID == "" {
+			return "", "Compárteme el ID del recordatorio para consultarlo.", nil
+		}
+		item, err := s.savings.GetRecurringPaymentReminderForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Recordatorio: %s (%d %s).", item.GetTitle(), item.GetAmount().GetUnits(), item.GetAmount().GetCurrencyCode()), nil
+	case "list":
+		items, err := s.savings.ListRecurringPaymentRemindersForUser(ctx, userID, 10)
+		if err != nil {
+			return "", "", err
+		}
+		if len(items) == 0 {
+			return "", "No tienes recordatorios recurrentes activos.", nil
+		}
+		parts := make([]string, 0, minInt(len(items), 4))
+		for i, item := range items {
+			if i >= 4 {
+				break
+			}
+			parts = append(parts, item.GetTitle())
+		}
+		return items[0].GetId(), "Tus recordatorios: " + strings.Join(parts, ", ") + ".", nil
+	case "update":
+		if action.ID == "" {
+			return "", "Compárteme el ID del recordatorio que quieres actualizar.", nil
+		}
+		current, err := s.savings.GetRecurringPaymentReminderForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		freq := current.GetFrequency()
+		if action.Frequency != savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_UNSPECIFIED {
+			freq = action.Frequency
+		}
+		dow := current.DayOfWeek
+		dom := current.DayOfMonth
+		moy := current.MonthOfYear
+		if action.Frequency != savingsv1.RecurrenceFrequency_RECURRENCE_FREQUENCY_UNSPECIFIED {
+			dow, dom, moy = ensureAnchors(freq, action)
+		}
+		item, err := s.savings.UpdateRecurringPaymentReminderForUser(ctx, userID, &savingsv1.UpdateRecurringPaymentReminderRequest{
+			RecurringPaymentReminderId: current.GetId(),
+			Title:                      firstNonEmpty(action.Name, current.GetTitle()),
+			Payee:                      firstNonEmpty(action.Payee, current.GetPayee()),
+			Amount: &financev1.Money{
+				CurrencyCode: current.GetAmount().GetCurrencyCode(),
+				Units:        choosePositive(action.AmountUnits, current.GetAmount().GetUnits()),
+				Nanos:        current.GetAmount().GetNanos(),
+			},
+			Frequency:   freq,
+			Interval:    maxInt32(maxInt32(action.Interval, current.GetInterval()), 1),
+			DayOfWeek:   dow,
+			DayOfMonth:  dom,
+			MonthOfYear: moy,
+			LocalTime:   firstNonEmpty(action.LocalTime, current.GetLocalTime()),
+			Timezone:    firstNonEmpty(action.Timezone, current.GetTimezone()),
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Recordatorio actualizado: %s.", item.GetTitle()), nil
+	case "delete":
+		if action.ID == "" {
+			return "", "Compárteme el ID del recordatorio que quieres eliminar.", nil
+		}
+		item, err := s.savings.DeleteRecurringPaymentReminderForUser(ctx, userID, action.ID)
+		if err != nil {
+			return "", "", err
+		}
+		return item.GetId(), fmt.Sprintf("Recordatorio eliminado: %s.", item.GetTitle()), nil
+	default:
+		return "", "", nil
+	}
+}
+
 func buildLedgerActionPrompt(
 	request *agentv1.RunRequest,
 	lastUserMessage string,
@@ -705,7 +1207,12 @@ func (s *Service) generateText(ctx context.Context, prompt string) (string, erro
 		return "", fmt.Errorf("model is not configured")
 	}
 	var out strings.Builder
-	for chunk, err := range genkit.GenerateStream(ctx, s.model, ai.WithPrompt(prompt)) {
+	for chunk, err := range genkit.GenerateStream(
+		ctx,
+		s.model,
+		ai.WithPrompt(prompt),
+		ai.WithToolChoice(ai.ToolChoiceNone),
+	) {
 		if err != nil {
 			return "", err
 		}
@@ -736,7 +1243,12 @@ func (s *Service) generateReply(ctx context.Context, request *agentv1.RunRequest
 	}
 
 	var reply strings.Builder
-	for chunk, err := range genkit.GenerateStream(ctx, s.model, ai.WithPrompt(prompt)) {
+	for chunk, err := range genkit.GenerateStream(
+		ctx,
+		s.model,
+		ai.WithPrompt(prompt),
+		ai.WithToolChoice(ai.ToolChoiceNone),
+	) {
 		if err != nil {
 			s.logger.Warn("agent generation failed, using fallback reply", "error", err)
 			reply := compactPlainURLs(fallbackReply(lastUserMessage, toolContext))
@@ -983,7 +1495,8 @@ func isLedgerRelated(text string) bool {
 		"gasto", "gastos", "egreso", "egresos",
 		"ingreso", "ingresos", "movimiento", "movimientos", "historial", "balance",
 		"registr", "actualiz", "corrig", "elimin", "borr", "deshaz", "deshacer",
-		"me depositaron", "me pagaron", "me cayeron", "me gast", "pagué", "pague",
+		"me depositaron", "me pagaron", "me cayeron",
+		"me gast", "gaste", "gasté", "pague", "pagué", "compre", "compré",
 	)
 }
 
@@ -1320,6 +1833,27 @@ func ledgerDelta(threadID, runID, action string, expense *financev1.Expense) *ag
 			"updated": true,
 			"action":  action,
 			"id":      expense.GetId(),
+		},
+	})
+
+	return &agentv1.RunEvent{
+		Event: &agentv1.RunEvent_StateDelta{
+			StateDelta: &agentv1.StateDelta{
+				ThreadId: threadID,
+				RunId:    runID,
+				Delta:    delta,
+			},
+		},
+	}
+}
+
+func savingsDelta(threadID, runID, entity, action, id string) *agentv1.RunEvent {
+	delta, _ := structpb.NewStruct(map[string]any{
+		"savings": map[string]any{
+			"updated": true,
+			"entity":  entity,
+			"action":  action,
+			"id":      id,
 		},
 	})
 
@@ -1724,6 +2258,27 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func maxInt32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func choosePositive(candidate, fallback int64) int64 {
+	if candidate > 0 {
+		return candidate
+	}
+	return fallback
 }
 
 func looksLikeManualInstruction(text string) bool {
