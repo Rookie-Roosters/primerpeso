@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -29,9 +30,12 @@ OUT="/tmp/primerpeso-app-api.${USER:-deploy}.yaml"
 python3 "$ROOT_DIR/scripts/digitalocean/render_do_specs.py" api "$OUT"
 doctl apps spec validate "$OUT"
 
-echo "Creating App Platform app from $OUT ..."
-doctl apps create --spec "$OUT"
-echo ""
-echo "Watch: doctl apps list"
-echo "Logs: doctl apps logs <APP_ID> --type run --follow"
-echo "CORS is controlled by ALLOWED_ORIGINS in scripts/digitalocean/api.local.env (use restricted HTTPS origins)."
+APP_NAME="${APP_NAME:-primerpeso-api}"
+APP_ID="${APP_ID:-$(doctl apps list --format ID,Spec.Name --no-header | awk -v name="$APP_NAME" '$2 == name {print $1; exit}')}"
+if [[ -z "$APP_ID" ]]; then
+  echo "Could not find app id for APP_NAME=$APP_NAME. Set APP_ID explicitly." >&2
+  exit 1
+fi
+
+echo "Updating API app $APP_NAME ($APP_ID) from $OUT ..."
+doctl apps update "$APP_ID" --spec "$OUT" --update-sources --wait

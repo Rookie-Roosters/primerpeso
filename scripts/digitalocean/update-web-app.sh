@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
@@ -37,5 +38,12 @@ OUT="/tmp/primerpeso-app-web.${USER:-deploy}.yaml"
 python3 "$ROOT_DIR/scripts/digitalocean/render_do_specs.py" web "$OUT"
 doctl apps spec validate "$OUT"
 
-echo "Creating web app from $OUT ..."
-doctl apps create --spec "$OUT"
+APP_NAME="${APP_NAME:-primerpeso-web}"
+APP_ID="${APP_ID:-$(doctl apps list --format ID,Spec.Name --no-header | awk -v name="$APP_NAME" '$2 == name {print $1; exit}')}"
+if [[ -z "$APP_ID" ]]; then
+  echo "Could not find app id for APP_NAME=$APP_NAME. Set APP_ID explicitly." >&2
+  exit 1
+fi
+
+echo "Updating web app $APP_NAME ($APP_ID) from $OUT ..."
+doctl apps update "$APP_ID" --spec "$OUT" --update-sources --wait

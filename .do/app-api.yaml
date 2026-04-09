@@ -67,7 +67,7 @@ services:
       # Leave DATABASE_SCHEMA unset: App Platform dev DBs only support the default `public`
       # schema (no CREATE SCHEMA). Use Managed PostgreSQL + DATABASE_SCHEMA for isolation.
       - key: ALLOWED_ORIGINS
-        value: "*"
+        value: __ALLOWED_ORIGINS__
         scope: RUN_TIME
         type: GENERAL
       - key: AUTH_SECRET

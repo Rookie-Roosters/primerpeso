@@ -186,6 +186,42 @@ curl http://localhost:8080/healthz
 curl http://localhost:8080/readyz
 ```
 
+## DigitalOcean Deploy
+
+Use `scripts/digitalocean/*.sh` with `doctl` authenticated.
+
+Create a brand-new app:
+
+```bash
+./scripts/digitalocean/create-api-app.sh
+./scripts/digitalocean/create-web-app.sh
+```
+
+Update an existing app and redeploy sources:
+
+```bash
+./scripts/digitalocean/update-api-app.sh
+./scripts/digitalocean/update-web-app.sh
+```
+
+Required env files:
+
+- `scripts/digitalocean/web.local.env`
+  - `PRIMERPESO_API_BASE_URL` must be a real HTTPS API URL (no trailing slash, no placeholders).
+- `scripts/digitalocean/api.local.env`
+  - `ALLOWED_ORIGINS` is required and should be a comma-separated list of HTTPS web origins for production CORS.
+
+Post-deploy checklist (required):
+
+```bash
+API_BASE_URL=https://primerpeso-api-xxxxx.ondigitalocean.app \
+WEB_BASE_URL=https://primerpeso-web-xxxxx.ondigitalocean.app \
+./scripts/digitalocean/post-deploy-checks.sh
+```
+
+This validates API `healthz`/`readyz`, CORS preflight, and that `main.dart.js`
+does not contain the placeholder API host.
+
 ## Notes
 
 - The frontend uses generated Connect-Dart clients from `frontend/lib/gen/`.
