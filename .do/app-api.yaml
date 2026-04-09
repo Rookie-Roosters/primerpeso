@@ -15,8 +15,14 @@ alerts:
   - rule: DEPLOYMENT_FAILED
 
 databases:
-  # Renamed from primerpeso-db to force a fresh dev DB when grants on `public` are stuck
-  # after failed deploys (see DO: permission denied for schema public in dev databases).
+  # primerpeso-db: legacy; remove after DATABASE_URL points at primerpeso-pg and deploy succeeds
+  # (DO forbids create+delete DB in one spec change).
+  - name: primerpeso-db
+    engine: PG
+    version: "16"
+    production: false
+    db_name: primerpeso-db
+    db_user: primerpeso-db
   - name: primerpeso-pg
     engine: PG
     version: "16"
