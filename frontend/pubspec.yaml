@@ -16,7 +16,6 @@ dependencies:
   # UI
   forui: ^0.18.0
   mix: ^2.0.0
-  google_fonts: ^6.2.1
 
   # Routing
   go_router: ^14.0.0

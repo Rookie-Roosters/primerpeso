@@ -132,6 +132,16 @@ flutter pub get
 flutter run
 ```
 
+For web performance checks, avoid debug mode because startup and rendering are
+significantly slower than production:
+
+```bash
+cd frontend
+flutter run -d chrome --profile
+# or:
+flutter build web --release
+```
+
 The app defaults to:
 
 - `http://10.0.2.2:8080` on Android emulators

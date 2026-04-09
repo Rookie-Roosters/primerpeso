@@ -35,13 +35,26 @@ class ScoreScreen extends StatelessWidget {
   }
 }
 
-class _ScoreSummaryBody extends StatelessWidget {
+class _ScoreSummaryBody extends StatefulWidget {
   const _ScoreSummaryBody();
+
+  @override
+  State<_ScoreSummaryBody> createState() => _ScoreSummaryBodyState();
+}
+
+class _ScoreSummaryBodyState extends State<_ScoreSummaryBody> {
+  Future<financev1.GetScoreSummaryResponse>? _summaryFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _summaryFuture ??= AppScope.of(context).financeRepository.getScoreSummary();
+  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<financev1.GetScoreSummaryResponse>(
-      future: AppScope.of(context).financeRepository.getScoreSummary(),
+      future: _summaryFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Padding(

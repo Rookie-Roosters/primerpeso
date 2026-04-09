@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -20,7 +21,7 @@ class AppSession extends ChangeNotifier {
     final existingDeviceId = prefs.getString(_deviceIdKey);
     final deviceId = existingDeviceId ?? _generateDeviceId();
     if (existingDeviceId == null) {
-      await prefs.setString(_deviceIdKey, deviceId);
+      unawaited(prefs.setString(_deviceIdKey, deviceId));
     }
 
     return AppSession._(

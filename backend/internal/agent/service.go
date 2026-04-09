@@ -1490,6 +1490,9 @@ func isInsideMarkdownLink(text string, start int) bool {
 }
 
 func isLedgerRelated(text string) bool {
+	if kind, ok := detectMovementKind(strings.ToLower(text)); ok && kind != "" {
+		return true
+	}
 	return containsAny(
 		text,
 		"gasto", "gastos", "egreso", "egresos",
@@ -1968,7 +1971,7 @@ func detectMovementKind(lowerText string) (string, bool) {
 	case containsAny(lowerText,
 		"me pagaron", "recibi", "recibí", "ingrese", "ingresé", "gane",
 		"gané", "cobre", "cobré", "depositaron", "me depositaron", "me llego", "me llegó",
-		"me cayeron", "me cayo", "me cayó",
+		"me cayeron", "me cayo", "me cayó", "me callo", "me calló",
 	):
 		return "income", true
 	default:
@@ -2112,7 +2115,7 @@ func shouldAttemptAutoRegistration(lowerText string) bool {
 	return containsAny(
 		lowerText,
 		"me gaste", "me gasté", "gaste", "gasté",
-		"me pagaron", "recibi", "recibí", "me cayeron", "me cayó", "me cayo",
+		"me pagaron", "recibi", "recibí", "me cayeron", "me cayó", "me cayo", "me calló", "me callo",
 		"ingreso", "gasto", "que registr", "en realidad era de", "en realidad fue de",
 	)
 }

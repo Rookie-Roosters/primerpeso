@@ -14,9 +14,8 @@ import 'typography.dart';
 /// primary tone toward our deeper forest brand green so headers, primary
 /// buttons and accents feel cohesive with the reference UI.
 ///
-/// Also injects Inter (loaded via `google_fonts`) into every typography slot
-/// so Forui buttons, alerts, text fields and inputs share the same font as
-/// the rest of the app.
+/// Also unbinds package-specific font families from typography slots so web
+/// startup can paint immediately with system fonts.
 FThemeData buildAppTheme() {
   final base = FThemes.green.light;
   return base.copyWith(

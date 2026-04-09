@@ -11,8 +11,25 @@ import '../../../core/ui/hero_card.dart';
 import '../../../core/ui/screen_header.dart';
 import '../../../gen/primerpeso/finance/v1/finance.pb.dart' as financev1;
 
-class HistoryScreen extends StatelessWidget {
+class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
+
+  @override
+  State<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends State<HistoryScreen> {
+  Future<List<financev1.Expense>>? _expensesFuture;
+  int _expensesRevision = -1;
+
+  Future<List<financev1.Expense>> _expensesFutureFor(BuildContext context) {
+    final revision = AppScope.ledgerRefreshOf(context).revision;
+    if (_expensesFuture == null || revision != _expensesRevision) {
+      _expensesRevision = revision;
+      _expensesFuture = AppScope.of(context).financeRepository.listExpenses();
+    }
+    return _expensesFuture!;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +50,7 @@ class HistoryScreen extends StatelessWidget {
                 animation: AppScope.ledgerRefreshOf(context),
                 builder: (context, _) => FutureBuilder<List<financev1.Expense>>(
                   key: ValueKey(AppScope.ledgerRefreshOf(context).revision),
-                  future: AppScope.of(context).financeRepository.listExpenses(),
+                  future: _expensesFutureFor(context),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return Padding(

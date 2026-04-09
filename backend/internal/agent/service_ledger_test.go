@@ -89,6 +89,15 @@ func TestIsLedgerRelatedColloquialExpense(t *testing.T) {
 	}
 }
 
+func TestIsLedgerRelatedColloquialIncome(t *testing.T) {
+	if !isLedgerRelated("Me cayó 200 de la tanda") {
+		t.Fatalf("expected colloquial income phrase to be ledger-related")
+	}
+	if !isLedgerRelated("Me calló 200 de la tanda") {
+		t.Fatalf("expected colloquial income typo phrase to be ledger-related")
+	}
+}
+
 func TestApplyToolsPrelistFailureBlocksMutation(t *testing.T) {
 	finance := &stubFinance{listErr: errors.New("db unavailable")}
 	svc := &Service{
@@ -153,6 +162,36 @@ func TestApplyToolsRegistersColloquialExpense(t *testing.T) {
 		"run-1",
 		request,
 		"Gaste 200 en el cine",
+	)
+	if err != nil {
+		t.Fatalf("applyTools returned error: %v", err)
+	}
+	if finance.listCalls != 1 {
+		t.Fatalf("expected one pre-list call, got %d", finance.listCalls)
+	}
+	if finance.registerCalls != 1 {
+		t.Fatalf("expected one register call, got %d", finance.registerCalls)
+	}
+}
+
+func TestApplyToolsRegistersColloquialIncome(t *testing.T) {
+	finance := &stubFinance{}
+	svc := &Service{
+		logger:       slog.Default(),
+		finance:      finance,
+		receipts:     stubReceipts{},
+		systemPrompt: fallbackSystemPrompt,
+	}
+
+	request := &agentv1.RunRequest{}
+	_, err := svc.applyTools(
+		context.Background(),
+		func(*agentv1.RunEvent) error { return nil },
+		"user-1",
+		"thread-1",
+		"run-1",
+		request,
+		"Me cayó 200 de la tanda",
 	)
 	if err != nil {
 		t.Fatalf("applyTools returned error: %v", err)
