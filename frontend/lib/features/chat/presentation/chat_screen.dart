@@ -4,8 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:shard/shard.dart';
 
 import '../../../core/agui/agui_client.dart';
-import '../../../core/agui/fake_agui_server.dart';
+import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
+import '../../../gen/primerpeso/agent/v1/agent.connect.client.dart';
+import '../../auth/domain/auth_state.dart';
+import '../../auth/presentation/auth_gate_screen.dart';
+import '../../auth/shards/auth_shard.dart';
 import '../data/chat_repository.dart';
 import '../domain/chat_state.dart';
 import '../shards/chat_shard.dart';
@@ -14,60 +18,72 @@ import 'widgets/chat_composer.dart';
 import 'widgets/chat_header.dart';
 
 /// Maps AG-UI tool calls onto router navigation.
-///
-/// Hard-coded for the skeleton; once the agent grows we'll move this into
-/// a registry the chat shard reads from.
 const _toolRouteMap = <String, String>{
-  'open_dashboard': '/tracker',
-  'open_paycheck_simulator': '/simulator/paycheck',
-  'open_credit_simulator': '/simulator/credit',
-  'open_cat_simulator': '/simulator/cat',
+  'open_tracker': '/tracker',
   'open_history': '/history',
+  'open_score': '/score',
   'open_settings': '/settings',
 };
 
 const _shellPaths = {'/tracker', '/chat', '/score'};
 
-/// Whether to use the in-memory fake AG-UI server.
-///
-/// Wired here (not in `main.dart`) so the chat screen owns the
-/// transport selection. Flip to false once a real backend is reachable.
-const bool kUseFakeAgUi = true;
-
-class ChatScreen extends StatefulWidget {
+class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  Widget build(BuildContext context) {
+    return ShardBuilder<AuthShard, AuthState>(
+      builder: (context, authState) {
+        if (!authState.isAuthenticated || authState.accessToken == null) {
+          return const AuthGateScreen();
+        }
+
+        final services = AppScope.of(context);
+        return _AuthenticatedChatScreen(
+          key: ValueKey(authState.profile?.userId ?? authState.accessToken),
+          agentClient: services.agentClient,
+          profileId: authState.profile?.userId ?? 'guest',
+          displayName: authState.profile?.displayName ?? '',
+        );
+      },
+    );
+  }
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _AuthenticatedChatScreen extends StatefulWidget {
+  const _AuthenticatedChatScreen({
+    required this.agentClient,
+    required this.profileId,
+    required this.displayName,
+    super.key,
+  });
+
+  final AgentServiceClient agentClient;
+  final String profileId;
+  final String displayName;
+
+  @override
+  State<_AuthenticatedChatScreen> createState() =>
+      _AuthenticatedChatScreenState();
+}
+
+class _AuthenticatedChatScreenState extends State<_AuthenticatedChatScreen> {
   TextEditingValue _composerValue = TextEditingValue.empty;
 
-  late final AgUiClient _agUi;
-
-  @override
-  void initState() {
-    super.initState();
-    _agUi = kUseFakeAgUi
-        ? FakeAgUiClient()
-        : HttpAgUiClient(endpoint: Uri.parse('http://localhost:8080/agent/run'));
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
+  late final AgUiClient _agUi = ConnectAgUiClient(
+    client: widget.agentClient,
+    accessTokenProvider: () =>
+        ShardProvider.of<AuthShard>(context, listen: false).state.accessToken,
+  );
 
   void _handleNavigate(String toolName, Map<String, dynamic> args) {
     final route = _toolRouteMap[toolName];
-    if (route == null) return;
-    if (!mounted) return;
+    if (route == null || !mounted) return;
     if (_shellPaths.contains(route)) {
       context.go(route);
-    } else {
-      context.push(route);
+      return;
     }
+    context.push(route);
   }
 
   void _send(ChatShard shard, [String? text]) {
@@ -83,7 +99,29 @@ class _ChatScreenState extends State<ChatScreen> {
       create: () => ChatShard(
         repository: ChatRepository(
           client: _agUi,
-          threadId: 'thread-${DateTime.now().millisecondsSinceEpoch}',
+          threadId: 'thread-${widget.profileId}',
+          stateBuilder: () => {
+            'currentRoute': _currentRoute(context),
+            'user': {'displayName': widget.displayName},
+          },
+          tools: const [
+            AgUiToolDefinition(
+              name: 'open_tracker',
+              description: 'Abre el tracker de gastos y tickets.',
+            ),
+            AgUiToolDefinition(
+              name: 'open_history',
+              description: 'Abre el historial de movimientos confirmados.',
+            ),
+            AgUiToolDefinition(
+              name: 'open_score',
+              description: 'Abre la pantalla del score financiero.',
+            ),
+            AgUiToolDefinition(
+              name: 'open_settings',
+              description: 'Abre la configuración de la cuenta.',
+            ),
+          ],
         ),
         onNavigate: _handleNavigate,
       ),
@@ -95,15 +133,16 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: ShardBuilder<ChatShard, ChatState>(
                 builder: (context, state) {
-                  final shard = ShardProvider.of<ChatShard>(context, listen: false);
+                  final shard = ShardProvider.of<ChatShard>(
+                    context,
+                    listen: false,
+                  );
                   final items = [
                     ...state.messages,
                     if (state.draftAssistant != null) state.draftAssistant!,
                   ];
                   if (items.isEmpty) {
-                    return _EmptyChatHint(
-                      onSend: (text) => _send(shard, text),
-                    );
+                    return _EmptyChatHint(onSend: (text) => _send(shard, text));
                   }
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -133,7 +172,10 @@ class _ChatScreenState extends State<ChatScreen> {
               child: ShardBuilder<ChatShard, ChatState>(
                 buildWhen: (a, b) => a.runStatus != b.runStatus,
                 builder: (context, state) {
-                  final shard = ShardProvider.of<ChatShard>(context, listen: false);
+                  final shard = ShardProvider.of<ChatShard>(
+                    context,
+                    listen: false,
+                  );
                   return ChatComposer(
                     value: _composerValue,
                     onChanged: (v) => setState(() => _composerValue = v),
@@ -147,6 +189,14 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
+  }
+}
+
+String _currentRoute(BuildContext context) {
+  try {
+    return GoRouterState.of(context).uri.path;
+  } catch (_) {
+    return '/chat';
   }
 }
 
@@ -194,11 +244,7 @@ class _EmptyChatHint extends StatelessWidget {
           const Text(
             'Cuéntame qué decisión financiera\nquieres revisar hoy.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: inkMuted,
-              fontSize: 15,
-              height: 1.5,
-            ),
+            style: TextStyle(color: inkMuted, fontSize: 15, height: 1.5),
           ),
           const SizedBox(height: 32),
           ..._suggestions.map(

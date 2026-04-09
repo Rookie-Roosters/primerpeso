@@ -1,16 +1,14 @@
-// Smoke test: the app boots and the chat surface is the initial route.
+// Smoke test: the app boots into the auth gate on the chat route.
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:primerpeso/app/app.dart';
 
 void main() {
-  testWidgets('App boots into the chat surface', (tester) async {
+  testWidgets('App boots into the auth gate', (tester) async {
     await tester.pumpWidget(const App());
-    // Let the fake AG-UI client + initial route settle.
     await tester.pump();
 
-    // The empty-state hint in ChatScreen tells us we landed on /chat.
-    expect(find.text('Hola, soy Peso.'), findsOneWidget);
+    expect(find.text('Entra para hablar con Peso'), findsOneWidget);
   });
 }

@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package primerpeso.identity.v1;
+
+option go_package = "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/identity/v1;identityv1";
+
+import "google/protobuf/timestamp.proto";
+
+service IdentityService {
+  rpc Register(RegisterRequest) returns (AuthSessionResponse);
+  rpc Login(LoginRequest) returns (AuthSessionResponse);
+  rpc Refresh(RefreshRequest) returns (AuthSessionResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+  rpc BeginGoogleAuth(BeginGoogleAuthRequest) returns (BeginGoogleAuthResponse);
+  rpc ExchangeGoogleAuthCode(ExchangeGoogleAuthCodeRequest) returns (AuthSessionResponse);
+  rpc VerifyEmail(VerifyEmailRequest) returns (GetMeResponse);
+  rpc ResendVerificationEmail(ResendVerificationEmailRequest) returns (ResendVerificationEmailResponse);
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+}
+
+message UserProfile {
+  string user_id = 1;
+  string email = 2;
+  string display_name = 3;
+  bool email_verified = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message AuthTokens {
+  string access_token = 1;
+  string refresh_token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message AuthSessionResponse {
+  UserProfile profile = 1;
+  AuthTokens tokens = 2;
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message RefreshRequest {
+  string refresh_token = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {
+  bool ok = 1;
+}
+
+message GetMeRequest {}
+
+message GetMeResponse {
+  UserProfile profile = 1;
+}
+
+message BeginGoogleAuthRequest {
+  string platform = 1;
+}
+
+message BeginGoogleAuthResponse {
+  string authorization_url = 1;
+  string state = 2;
+}
+
+message ExchangeGoogleAuthCodeRequest {
+  string exchange_code = 1;
+}
+
+message VerifyEmailRequest {
+  string verification_token = 1;
+}
+
+message ResendVerificationEmailRequest {
+  string email = 1;
+}
+
+message ResendVerificationEmailResponse {
+  bool ok = 1;
+}
+
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message RequestPasswordResetResponse {
+  bool ok = 1;
+}
+
+message ResetPasswordRequest {
+  string reset_token = 1;
+  string new_password = 2;
+}
+
+message ResetPasswordResponse {
+  bool ok = 1;
+}

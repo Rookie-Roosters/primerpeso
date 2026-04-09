@@ -14,9 +14,7 @@ class ChatHeader extends StatelessWidget {
     return DecoratedBox(
       decoration: const BoxDecoration(
         color: warmSurface,
-        border: Border(
-          bottom: BorderSide(color: borderSubtle, width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: borderSubtle, width: 1)),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),

@@ -13,10 +13,8 @@ import '../domain/chat_state.dart';
 /// Wired in [ChatScreen] so the shard remains testable: a unit test can
 /// pass a noop callback and assert that `open_dashboard` triggers it
 /// without spinning up a router.
-typedef ChatNavigateCallback = void Function(
-  String toolName,
-  Map<String, dynamic> args,
-);
+typedef ChatNavigateCallback =
+    void Function(String toolName, Map<String, dynamic> args);
 
 /// Streams an AG-UI run into a [ChatState].
 ///
@@ -24,10 +22,8 @@ typedef ChatNavigateCallback = void Function(
 /// rather than per-shard-lifetime: a new subscription is created on every
 /// user turn and torn down on `RUN_FINISHED` / error / dispose.
 class ChatShard extends Shard<ChatState> {
-  ChatShard({
-    required this.repository,
-    required this.onNavigate,
-  }) : super(const ChatState.initial());
+  ChatShard({required this.repository, required this.onNavigate})
+    : super(const ChatState.initial());
 
   final ChatRepository repository;
   final ChatNavigateCallback onNavigate;
@@ -72,7 +68,9 @@ class ChatShard extends Shard<ChatState> {
     );
 
     await _sub?.cancel();
-    _sub = repository.sendMessages(nextMessages).listen(
+    _sub = repository
+        .sendMessages(nextMessages)
+        .listen(
           _handleEvent,
           onError: _handleError,
           onDone: _handleDone,
@@ -145,11 +143,7 @@ class ChatShard extends Shard<ChatState> {
         onNavigate(name, args);
 
       case StateDelta(:final patch):
-        emit(
-          state.copyWith(
-            agentState: {...state.agentState, ...patch},
-          ),
-        );
+        emit(state.copyWith(agentState: {...state.agentState, ...patch}));
 
       case RunStarted():
         // No-op: streaming flag was set by send().
@@ -195,12 +189,7 @@ class ChatShard extends Shard<ChatState> {
     if (state.errorMessage == null && state.runStatus != RunStatus.error) {
       return;
     }
-    emit(
-      state.copyWith(
-        runStatus: RunStatus.idle,
-        clearError: true,
-      ),
-    );
+    emit(state.copyWith(runStatus: RunStatus.idle, clearError: true));
   }
 
   @override

@@ -1,8 +1,6 @@
-# ConnectRPC code generation for the Flutter client.
-#
-# Intentionally a placeholder during the skeleton phase. Generated Dart
-# stubs will land in `lib/gen/` once the backend's `proto/` directory is
-# in place. To re-enable, install the dart connect plugin and run
-# `buf generate` from this directory.
 version: v2
-plugins: []
+plugins:
+  - remote: buf.build/protocolbuffers/dart
+    out: ../../frontend/lib/gen
+  - remote: buf.build/connectrpc/dart
+    out: ../../frontend/lib/gen

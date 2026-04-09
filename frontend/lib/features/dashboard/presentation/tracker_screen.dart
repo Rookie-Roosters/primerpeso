@@ -1,8 +1,13 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shard/shard.dart';
 
+import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
+import '../../auth/shards/auth_shard.dart';
+import '../../auth/domain/auth_state.dart';
 
 // ── Placeholder data models ─────────────────────────────────────────────────
 
@@ -97,8 +102,86 @@ const _accounts = [
 // ── Screen ──────────────────────────────────────────────────────────────────
 
 /// Cash management home — monthly summary, categories and accounts.
-class TrackerScreen extends StatelessWidget {
+class TrackerScreen extends StatefulWidget {
   const TrackerScreen({super.key});
+
+  @override
+  State<TrackerScreen> createState() => _TrackerScreenState();
+}
+
+class _TrackerScreenState extends State<TrackerScreen> {
+  final ImagePicker _picker = ImagePicker();
+
+  bool _isUploading = false;
+  String? _uploadError;
+
+  Future<void> _startUpload() async {
+    final authState = ShardProvider.of<AuthShard>(context, listen: false).state;
+    final accessToken = authState.accessToken;
+    if (accessToken == null || accessToken.isEmpty) {
+      if (mounted) {
+        context.go('/chat');
+      }
+      return;
+    }
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(FIcons.camera),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(FIcons.image),
+              title: const Text('Elegir de galería'),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    setState(() {
+      _isUploading = true;
+      _uploadError = null;
+    });
+
+    try {
+      final image = await _picker.pickImage(source: source, imageQuality: 92);
+      if (image == null) {
+        if (mounted) {
+          setState(() => _isUploading = false);
+        }
+        return;
+      }
+
+      final bytes = await image.readAsBytes();
+      final draft = await AppScope.of(context).receiptRepository.uploadReceipt(
+        accessToken: accessToken,
+        content: bytes,
+        filename: image.name,
+        mimeType: _mimeTypeForPath(image.path),
+      );
+      if (!mounted) return;
+      await context.push('/receipt-review', extra: draft);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _uploadError = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +203,10 @@ class TrackerScreen extends StatelessWidget {
               child: _SummaryCard(),
             ),
             const SizedBox(height: 28),
-            const _SectionHeader(title: 'Gastos por categoría', action: 'Ver todos'),
+            const _SectionHeader(
+              title: 'Gastos por categoría',
+              action: 'Ver todos',
+            ),
             const SizedBox(height: 12),
             const _CategoriesRow(),
             const SizedBox(height: 28),
@@ -128,9 +214,20 @@ class TrackerScreen extends StatelessWidget {
             const SizedBox(height: 12),
             const _AccountsRow(),
             const SizedBox(height: 28),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: _ScanButton(),
+            if (_uploadError != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: FAlert(
+                  variant: FAlertVariant.destructive,
+                  title: const Text('No pude subir el ticket'),
+                  subtitle: Text(_uploadError!),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _ScanButton(onTap: _startUpload, isBusy: _isUploading),
             ),
             const SizedBox(height: 24),
           ],
@@ -302,7 +399,10 @@ class _SummaryCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 child: Row(
                   children: [
                     const Text(
@@ -333,7 +433,11 @@ class _SummaryCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 2),
-                    const Icon(FIcons.chevronRight, size: 14, color: primaryGreen),
+                    const Icon(
+                      FIcons.chevronRight,
+                      size: 14,
+                      color: primaryGreen,
+                    ),
                   ],
                 ),
               ),
@@ -604,38 +708,69 @@ class _AccountCard extends StatelessWidget {
 // ── Scan / add button ─────────────────────────────────────────────────────────
 
 class _ScanButton extends StatelessWidget {
-  const _ScanButton();
+  const _ScanButton({required this.onTap, required this.isBusy});
+
+  final VoidCallback onTap;
+  final bool isBusy;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [primaryGreen, midGreen],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(FIcons.plus, size: 18, color: surface),
-            SizedBox(width: 8),
-            Text(
-              'Escanear o registrar',
-              style: TextStyle(
-                color: surface,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.2,
-              ),
+    return GestureDetector(
+      onTap: isBusy ? null : onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Opacity(
+        opacity: isBusy ? 0.72 : 1,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [primaryGreen, midGreen],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
             ),
-          ],
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isBusy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      valueColor: AlwaysStoppedAnimation<Color>(surface),
+                    ),
+                  )
+                else
+                  const Icon(FIcons.plus, size: 18, color: surface),
+                const SizedBox(width: 8),
+                Text(
+                  isBusy ? 'Subiendo ticket…' : 'Escanear o registrar',
+                  style: const TextStyle(
+                    color: surface,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
+}
+
+String _mimeTypeForPath(String path) {
+  final lower = path.toLowerCase();
+  if (lower.endsWith('.png')) {
+    return 'image/png';
+  }
+  if (lower.endsWith('.webp')) {
+    return 'image/webp';
+  }
+  return 'image/jpeg';
 }

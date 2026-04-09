@@ -3,8 +3,10 @@ import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/chat/presentation/chat_screen.dart';
+import '../features/dashboard/presentation/receipt_review_screen.dart';
 import '../features/dashboard/presentation/score_screen.dart';
 import '../features/dashboard/presentation/tracker_screen.dart';
+import '../gen/primerpeso/documents/v1/documents.pb.dart' as documentsv1;
 import '../features/history/presentation/history_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/simulator/presentation/cat_screen.dart';
@@ -12,8 +14,9 @@ import '../features/simulator/presentation/credit_screen.dart';
 import '../features/simulator/presentation/paycheck_screen.dart';
 import 'app_shell.dart';
 
-final GlobalKey<NavigatorState> _rootNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'root');
+final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'root',
+);
 
 /// Root [GoRouter] — [StatefulShellRoute] keeps tracker, chat, and score alive;
 /// secondary routes use the root navigator so they cover the bottom bar.
@@ -71,6 +74,12 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       parentNavigatorKey: _rootNavigatorKey,
+      path: '/receipt-review',
+      builder: (context, state) =>
+          ReceiptReviewScreen(draft: state.extra! as documentsv1.ReceiptDraft),
+    ),
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
       path: '/simulator/paycheck',
       builder: (context, state) => const PaycheckScreen(),
     ),
@@ -103,7 +112,9 @@ class _RouteErrorPage extends StatelessWidget {
             FAlert(
               variant: FAlertVariant.destructive,
               title: const Text('Ruta no encontrada'),
-              subtitle: Text(error?.toString() ?? 'Esa pantalla aún no existe.'),
+              subtitle: Text(
+                error?.toString() ?? 'Esa pantalla aún no existe.',
+              ),
             ),
             const SizedBox(height: 16),
             FButton(

@@ -20,11 +20,11 @@ class ChatState {
   });
 
   const ChatState.initial()
-      : messages = const [],
-        draftAssistant = null,
-        runStatus = RunStatus.idle,
-        agentState = const {},
-        errorMessage = null;
+    : messages = const [],
+      draftAssistant = null,
+      runStatus = RunStatus.idle,
+      agentState = const {},
+      errorMessage = null;
 
   final List<ChatMessage> messages;
   final ChatMessage? draftAssistant;
@@ -45,8 +45,9 @@ class ChatState {
   }) {
     return ChatState(
       messages: messages ?? this.messages,
-      draftAssistant:
-          clearDraft ? null : (draftAssistant ?? this.draftAssistant),
+      draftAssistant: clearDraft
+          ? null
+          : (draftAssistant ?? this.draftAssistant),
       runStatus: runStatus ?? this.runStatus,
       agentState: agentState ?? this.agentState,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),

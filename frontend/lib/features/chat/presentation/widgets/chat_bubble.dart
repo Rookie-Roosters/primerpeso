@@ -103,7 +103,9 @@ class ChatBubble extends StatelessWidget {
                       ),
                     ),
                   Text(
-                    message.content.isEmpty && !isSystem ? '…' : message.content,
+                    message.content.isEmpty && !isSystem
+                        ? '…'
+                        : message.content,
                     textAlign: isUser ? TextAlign.right : TextAlign.left,
                     softWrap: true,
                     locale: const Locale('es'),

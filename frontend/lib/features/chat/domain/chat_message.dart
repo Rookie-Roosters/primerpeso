@@ -22,9 +22,9 @@ class ChatMessage {
   final String? toolName;
 
   ChatMessage copyWith({String? content}) => ChatMessage(
-        id: id,
-        role: role,
-        content: content ?? this.content,
-        toolName: toolName,
-      );
+    id: id,
+    role: role,
+    content: content ?? this.content,
+    toolName: toolName,
+  );
 }

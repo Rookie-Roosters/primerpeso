@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package primerpeso.finance.v1;
+
+option go_package = "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/finance/v1;financev1";
+
+import "google/protobuf/timestamp.proto";
+
+service FinanceService {
+  rpc ConfirmExpense(ConfirmExpenseRequest) returns (ConfirmExpenseResponse);
+  rpc ListExpenses(ListExpensesRequest) returns (ListExpensesResponse);
+  rpc GetScoreSummary(GetScoreSummaryRequest) returns (GetScoreSummaryResponse);
+}
+
+message Money {
+  string currency_code = 1;
+  int64 units = 2;
+  int32 nanos = 3;
+}
+
+message Expense {
+  string id = 1;
+  string merchant_name = 2;
+  string display_title = 3;
+  string category = 4;
+  string source_receipt_id = 5;
+  Money amount = 6;
+  google.protobuf.Timestamp occurred_at = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message ScoreFactor {
+  string key = 1;
+  string title = 2;
+  string explanation = 3;
+  int32 delta = 4;
+}
+
+message ScoreSummary {
+  int32 score = 1;
+  repeated ScoreFactor factors = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message ConfirmExpenseRequest {
+  string receipt_id = 1;
+  string merchant_name = 2;
+  string display_title = 3;
+  string category = 4;
+  Money amount = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+}
+
+message ConfirmExpenseResponse {
+  Expense expense = 1;
+  ScoreSummary score_summary = 2;
+}
+
+message ListExpensesRequest {
+  int32 page_size = 1;
+}
+
+message ListExpensesResponse {
+  repeated Expense expenses = 1;
+}
+
+message GetScoreSummaryRequest {}
+
+message GetScoreSummaryResponse {
+  ScoreSummary summary = 1;
+}

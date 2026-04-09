@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package primerpeso.agent.v1;
+
+option go_package = "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/agent/v1;agentv1";
+
+import "google/protobuf/struct.proto";
+import "primerpeso/finance/v1/finance.proto";
+
+service AgentService {
+  rpc Run(RunRequest) returns (stream RunEvent);
+}
+
+message ChatMessage {
+  string id = 1;
+  string role = 2;
+  string content = 3;
+}
+
+message ToolDefinition {
+  string name = 1;
+  string description = 2;
+  google.protobuf.Struct parameters = 3;
+}
+
+message RunRequest {
+  string thread_id = 1;
+  string run_id = 2;
+  repeated ChatMessage messages = 3;
+  google.protobuf.Struct state = 4;
+  repeated ToolDefinition tools = 5;
+}
+
+message RunStarted {
+  string thread_id = 1;
+  string run_id = 2;
+}
+
+message RunFinished {
+  string thread_id = 1;
+  string run_id = 2;
+}
+
+message RunError {
+  string thread_id = 1;
+  string run_id = 2;
+  string message = 3;
+  string code = 4;
+}
+
+message TextMessageStart {
+  string thread_id = 1;
+  string run_id = 2;
+  string message_id = 3;
+  string role = 4;
+}
+
+message TextMessageContent {
+  string thread_id = 1;
+  string run_id = 2;
+  string message_id = 3;
+  string delta = 4;
+}
+
+message TextMessageEnd {
+  string thread_id = 1;
+  string run_id = 2;
+  string message_id = 3;
+}
+
+message ToolCallStart {
+  string thread_id = 1;
+  string run_id = 2;
+  string tool_call_id = 3;
+  string name = 4;
+}
+
+message ToolCallArgs {
+  string thread_id = 1;
+  string run_id = 2;
+  string tool_call_id = 3;
+  string delta = 4;
+}
+
+message ToolCallEnd {
+  string thread_id = 1;
+  string run_id = 2;
+  string tool_call_id = 3;
+}
+
+message StateDelta {
+  string thread_id = 1;
+  string run_id = 2;
+  google.protobuf.Struct delta = 3;
+  primerpeso.finance.v1.ScoreSummary score_summary = 4;
+}
+
+message RunEvent {
+  oneof event {
+    RunStarted run_started = 1;
+    RunFinished run_finished = 2;
+    RunError run_error = 3;
+    TextMessageStart text_message_start = 4;
+    TextMessageContent text_message_content = 5;
+    TextMessageEnd text_message_end = 6;
+    ToolCallStart tool_call_start = 7;
+    ToolCallArgs tool_call_args = 8;
+    ToolCallEnd tool_call_end = 9;
+    StateDelta state_delta = 10;
+  }
+}

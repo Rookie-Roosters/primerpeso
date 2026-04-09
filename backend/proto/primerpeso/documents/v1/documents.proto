@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package primerpeso.documents.v1;
+
+option go_package = "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/documents/v1;documentsv1";
+
+import "google/protobuf/timestamp.proto";
+import "primerpeso/finance/v1/finance.proto";
+
+service ReceiptService {
+  rpc UploadReceipt(UploadReceiptRequest) returns (UploadReceiptResponse);
+  rpc GetReceiptDraft(GetReceiptDraftRequest) returns (GetReceiptDraftResponse);
+  rpc ListReceiptDrafts(ListReceiptDraftsRequest) returns (ListReceiptDraftsResponse);
+}
+
+enum ReceiptStatus {
+  RECEIPT_STATUS_UNSPECIFIED = 0;
+  RECEIPT_STATUS_PROCESSING = 1;
+  RECEIPT_STATUS_READY = 2;
+  RECEIPT_STATUS_FAILED = 3;
+}
+
+message ReceiptLineItem {
+  string description = 1;
+  primerpeso.finance.v1.Money amount = 2;
+  int32 quantity = 3;
+}
+
+message ReceiptDraft {
+  string id = 1;
+  ReceiptStatus status = 2;
+  string merchant_name = 3;
+  string suggested_category = 4;
+  string redacted_raw_text = 5;
+  repeated ReceiptLineItem line_items = 6;
+  primerpeso.finance.v1.Money total = 7;
+  google.protobuf.Timestamp purchased_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message UploadReceiptRequest {
+  bytes content = 1;
+  string filename = 2;
+  string mime_type = 3;
+}
+
+message UploadReceiptResponse {
+  ReceiptDraft draft = 1;
+}
+
+message GetReceiptDraftRequest {
+  string receipt_id = 1;
+}
+
+message GetReceiptDraftResponse {
+  ReceiptDraft draft = 1;
+}
+
+message ListReceiptDraftsRequest {
+  int32 page_size = 1;
+}
+
+message ListReceiptDraftsResponse {
+  repeated ReceiptDraft drafts = 1;
+}

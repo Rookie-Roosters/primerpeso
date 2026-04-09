@@ -1,66 +1,122 @@
 import 'dart:math' as math;
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:forui/forui.dart';
+import 'package:shard/shard.dart';
 
+import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
+import '../../../gen/primerpeso/finance/v1/finance.pb.dart' as financev1;
+import '../../auth/domain/auth_state.dart';
+import '../../auth/shards/auth_shard.dart';
 
 /// Criterio score screen — arc gauge + factor breakdown cards.
 class ScoreScreen extends StatelessWidget {
   const ScoreScreen({super.key});
 
-  static const double _mockScore = 0.68;
+  @override
+  Widget build(BuildContext context) {
+    return ShardBuilder<AuthShard, AuthState>(
+      builder: (context, authState) => ColoredBox(
+        color: warmSurface,
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tu score',
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.8,
+                        height: 1.0,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Criterio de salud financiera',
+                      style: TextStyle(
+                        color: inkMuted,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 28),
+              Expanded(
+                child:
+                    authState.isAuthenticated &&
+                        authState.accessToken != null &&
+                        authState.accessToken!.isNotEmpty
+                    ? _ScoreSummaryBody(accessToken: authState.accessToken!)
+                    : const _ScoreUnauthenticatedBody(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScoreSummaryBody extends StatelessWidget {
+  const _ScoreSummaryBody({required this.accessToken});
+
+  final String accessToken;
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: warmSurface,
-      child: SafeArea(
-        child: Column(
+    return FutureBuilder<financev1.GetScoreSummaryResponse>(
+      future: AppScope.of(
+        context,
+      ).financeRepository.getScoreSummary(accessToken),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: FAlert(
+              variant: FAlertVariant.destructive,
+              title: const Text('No pude cargar tu score'),
+              subtitle: Text(snapshot.error.toString()),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: primaryGreen),
+          );
+        }
+
+        final summary = snapshot.data!.summary;
+        final normalizedScore = (((summary.score - 300) / 6).clamp(
+          0,
+          100,
+        )).round();
+        final scoreRatio = normalizedScore / 100;
+
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header ──────────────────────────────────────────────────
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Tu score',
-                    style: TextStyle(
-                      color: ink,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.8,
-                      height: 1.0,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Criterio de salud financiera',
-                    style: TextStyle(
-                      color: inkMuted,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 28),
-
-            // ── Arc gauge ────────────────────────────────────────────────
             SizedBox(
               width: double.infinity,
               height: 190,
               child: CustomPaint(
-                painter: _ScoreGaugePainter(score: _mockScore),
+                painter: _ScoreGaugePainter(score: scoreRatio),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    const Text(
-                      '68',
-                      style: TextStyle(
+                    Text(
+                      '$normalizedScore',
+                      style: const TextStyle(
                         color: ink,
                         fontSize: 60,
                         fontWeight: FontWeight.w800,
@@ -69,9 +125,9 @@ class ScoreScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    const Text(
-                      'de 100',
-                      style: TextStyle(
+                    Text(
+                      '${summary.score} en escala backend',
+                      style: const TextStyle(
                         color: inkMuted,
                         fontSize: 14,
                         fontWeight: FontWeight.w400,
@@ -82,10 +138,7 @@ class ScoreScreen extends StatelessWidget {
                 ),
               ),
             ),
-
             const SizedBox(height: 28),
-
-            // ── Factor cards ─────────────────────────────────────────────
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 24),
               child: Text(
@@ -98,38 +151,53 @@ class ScoreScreen extends StatelessWidget {
                 ),
               ),
             ),
-
             const SizedBox(height: 12),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                 child: Column(
-                  children: const [
-                    _FactorCard(
-                      label: 'Decisiones registradas',
-                      value: 'Sin datos aún',
-                    ),
-                    SizedBox(height: 8),
-                    _FactorCard(
-                      label: 'Gastos vs ingresos',
-                      value: 'Sin datos aún',
-                    ),
-                    SizedBox(height: 8),
-                    _FactorCard(
-                      label: 'Historial de crédito',
-                      value: 'Sin datos aún',
-                    ),
-                    SizedBox(height: 8),
-                    _FactorCard(
-                      label: 'Uso de simuladores',
-                      value: 'Sin datos aún',
-                    ),
-                  ],
+                  children: summary.factors.isEmpty
+                      ? const [
+                          _FactorCard(
+                            label: 'Sin factores todavía',
+                            value:
+                                'Confirma tus primeros gastos para ver el detalle del score.',
+                          ),
+                        ]
+                      : summary.factors
+                            .map(
+                              (factor) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _FactorCard(
+                                  label: factor.title,
+                                  value: factor.explanation,
+                                  badge: _formatDelta(factor.delta),
+                                ),
+                              ),
+                            )
+                            .toList(),
                 ),
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+}
+
+class _ScoreUnauthenticatedBody extends StatelessWidget {
+  const _ScoreUnauthenticatedBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: Text(
+          'Inicia sesión para ver tu score real.',
+          style: TextStyle(color: inkMuted, fontSize: 15, height: 1.5),
         ),
       ),
     );
@@ -211,10 +279,15 @@ class _ScoreGaugePainter extends CustomPainter {
 }
 
 class _FactorCard extends StatelessWidget {
-  const _FactorCard({required this.label, required this.value});
+  const _FactorCard({
+    required this.label,
+    required this.value,
+    this.badge = '—',
+  });
 
   final String label;
   final String value;
+  final String badge;
 
   @override
   Widget build(BuildContext context) {
@@ -258,10 +331,7 @@ class _FactorCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     value,
-                    style: const TextStyle(
-                      color: inkMuted,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: inkMuted, fontSize: 12),
                   ),
                 ],
               ),
@@ -272,11 +342,11 @@ class _FactorCard extends StatelessWidget {
                 color: const Color(0xFFF0F4F2),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Text(
-                  '—',
-                  style: TextStyle(
+                  badge,
+                  style: const TextStyle(
                     color: inkMuted,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -289,4 +359,11 @@ class _FactorCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatDelta(int delta) {
+  if (delta > 0) {
+    return '+$delta';
+  }
+  return '$delta';
 }

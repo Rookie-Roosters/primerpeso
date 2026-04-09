@@ -2,21 +2,19 @@ import '../../../core/agui/agui_client.dart';
 import '../../../core/agui/agui_event.dart';
 import '../domain/chat_message.dart';
 
-/// Thin facade over [AgUiClient] that turns local [ChatMessage]s into an
-/// AG-UI run input.
-///
-/// Holds the conversation `threadId` so multi-turn runs share context, and
-/// generates a fresh `runId` per send. Tool definitions are static for now —
-/// the chat surface tells the agent what it can suggest opening.
+typedef ChatStateBuilder = Map<String, dynamic> Function();
+
 class ChatRepository {
   ChatRepository({
     required this.client,
     required this.threadId,
+    required this.stateBuilder,
     this.tools = const [],
   });
 
   final AgUiClient client;
   final String threadId;
+  final ChatStateBuilder stateBuilder;
   final List<AgUiToolDefinition> tools;
 
   int _runCounter = 0;
@@ -37,6 +35,7 @@ class ChatRepository {
             ),
           )
           .toList(),
+      state: stateBuilder(),
       tools: tools,
     );
     return client.run(input);

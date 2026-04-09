@@ -30,11 +30,7 @@ Stream<SseEvent> parseSse(Stream<List<int>> bytes) async* {
   await for (final raw in lines) {
     if (raw.isEmpty) {
       if (hasContent) {
-        yield SseEvent(
-          data: dataBuf.toString(),
-          event: eventName,
-          id: eventId,
-        );
+        yield SseEvent(data: dataBuf.toString(), event: eventName, id: eventId);
       }
       dataBuf.clear();
       eventName = null;

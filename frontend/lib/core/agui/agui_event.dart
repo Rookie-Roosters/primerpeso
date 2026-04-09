@@ -1,12 +1,9 @@
+import '../../gen/primerpeso/agent/v1/agent.pb.dart' as agentv1;
+
 // AG-UI (Agent-User Interaction) protocol event types.
 //
-// Models the day-one set the chat surface needs to render token-streaming
-// assistant turns and react to agent-driven navigation. The protocol uses a
-// JSON object with a `type` discriminator; new event types arrive as
-// `UnknownEvent` so the client never breaks when the backend evolves.
-//
-// Reference: https://docs.ag-ui.com — protocol is transport-agnostic; we
-// consume it over SSE in `AgUiClient`.
+// The backend streams typed ConnectRPC protobuf events. We translate them into
+// lightweight UI events so the chat shard stays transport-agnostic.
 
 sealed class AgUiEvent {
   const AgUiEvent({this.threadId, this.runId});
@@ -14,78 +11,88 @@ sealed class AgUiEvent {
   final String? threadId;
   final String? runId;
 
-  /// Decodes a single AG-UI event JSON object.
-  ///
-  /// Unknown `type` values become an [UnknownEvent] rather than throwing,
-  /// so the chat shard can log and keep streaming.
-  factory AgUiEvent.fromJson(Map<String, dynamic> json) {
-    final type = json['type'] as String? ?? '';
-    final threadId = json['threadId'] as String?;
-    final runId = json['runId'] as String?;
-
-    switch (type) {
-      case 'RUN_STARTED':
-        return RunStarted(threadId: threadId, runId: runId);
-      case 'RUN_FINISHED':
-        return RunFinished(threadId: threadId, runId: runId);
-      case 'RUN_ERROR':
+  factory AgUiEvent.fromProto(agentv1.RunEvent event) {
+    switch (event.whichEvent()) {
+      case agentv1.RunEvent_Event.runStarted:
+        final value = event.runStarted;
+        return RunStarted(threadId: value.threadId, runId: value.runId);
+      case agentv1.RunEvent_Event.runFinished:
+        final value = event.runFinished;
+        return RunFinished(threadId: value.threadId, runId: value.runId);
+      case agentv1.RunEvent_Event.runError:
+        final value = event.runError;
         return RunError(
-          threadId: threadId,
-          runId: runId,
-          message: json['message'] as String? ?? 'Unknown error',
-          code: json['code'] as String?,
+          threadId: value.threadId,
+          runId: value.runId,
+          message: value.message,
+          code: value.hasCode() ? value.code : null,
         );
-      case 'TEXT_MESSAGE_START':
+      case agentv1.RunEvent_Event.textMessageStart:
+        final value = event.textMessageStart;
         return TextMessageStart(
-          threadId: threadId,
-          runId: runId,
-          messageId: json['messageId'] as String? ?? '',
-          role: json['role'] as String? ?? 'assistant',
+          threadId: value.threadId,
+          runId: value.runId,
+          messageId: value.messageId,
+          role: value.role,
         );
-      case 'TEXT_MESSAGE_CONTENT':
+      case agentv1.RunEvent_Event.textMessageContent:
+        final value = event.textMessageContent;
         return TextMessageContent(
-          threadId: threadId,
-          runId: runId,
-          messageId: json['messageId'] as String? ?? '',
-          delta: json['delta'] as String? ?? '',
+          threadId: value.threadId,
+          runId: value.runId,
+          messageId: value.messageId,
+          delta: value.delta,
         );
-      case 'TEXT_MESSAGE_END':
+      case agentv1.RunEvent_Event.textMessageEnd:
+        final value = event.textMessageEnd;
         return TextMessageEnd(
-          threadId: threadId,
-          runId: runId,
-          messageId: json['messageId'] as String? ?? '',
+          threadId: value.threadId,
+          runId: value.runId,
+          messageId: value.messageId,
         );
-      case 'TOOL_CALL_START':
+      case agentv1.RunEvent_Event.toolCallStart:
+        final value = event.toolCallStart;
         return ToolCallStart(
-          threadId: threadId,
-          runId: runId,
-          toolCallId: json['toolCallId'] as String? ?? '',
-          name: json['toolCallName'] as String? ??
-              json['name'] as String? ??
-              '',
+          threadId: value.threadId,
+          runId: value.runId,
+          toolCallId: value.toolCallId,
+          name: value.name,
         );
-      case 'TOOL_CALL_ARGS':
+      case agentv1.RunEvent_Event.toolCallArgs:
+        final value = event.toolCallArgs;
         return ToolCallArgs(
-          threadId: threadId,
-          runId: runId,
-          toolCallId: json['toolCallId'] as String? ?? '',
-          argsDelta: json['delta'] as String? ?? '',
+          threadId: value.threadId,
+          runId: value.runId,
+          toolCallId: value.toolCallId,
+          argsDelta: value.delta,
         );
-      case 'TOOL_CALL_END':
+      case agentv1.RunEvent_Event.toolCallEnd:
+        final value = event.toolCallEnd;
         return ToolCallEnd(
-          threadId: threadId,
-          runId: runId,
-          toolCallId: json['toolCallId'] as String? ?? '',
+          threadId: value.threadId,
+          runId: value.runId,
+          toolCallId: value.toolCallId,
         );
-      case 'STATE_DELTA':
-        final patch = json['delta'];
+      case agentv1.RunEvent_Event.stateDelta:
+        final value = event.stateDelta;
+        final patch = <String, dynamic>{};
+        final deltaJson = value.hasDelta() ? value.delta.toProto3Json() : null;
+        if (deltaJson is Map) {
+          patch.addAll(Map<String, dynamic>.from(deltaJson));
+        }
+        final scoreJson = value.hasScoreSummary()
+            ? value.scoreSummary.toProto3Json()
+            : null;
+        if (scoreJson != null) {
+          patch['scoreSummary'] = scoreJson;
+        }
         return StateDelta(
-          threadId: threadId,
-          runId: runId,
-          patch: patch is Map<String, dynamic> ? patch : const {},
+          threadId: value.threadId,
+          runId: value.runId,
+          patch: patch,
         );
-      default:
-        return UnknownEvent(rawType: type, raw: json);
+      case agentv1.RunEvent_Event.notSet:
+        return const UnknownEvent(rawType: 'notSet', raw: {});
     }
   }
 }
@@ -135,11 +142,7 @@ final class TextMessageContent extends AgUiEvent {
 }
 
 final class TextMessageEnd extends AgUiEvent {
-  const TextMessageEnd({
-    super.threadId,
-    super.runId,
-    required this.messageId,
-  });
+  const TextMessageEnd({super.threadId, super.runId, required this.messageId});
 
   final String messageId;
 }
@@ -169,21 +172,13 @@ final class ToolCallArgs extends AgUiEvent {
 }
 
 final class ToolCallEnd extends AgUiEvent {
-  const ToolCallEnd({
-    super.threadId,
-    super.runId,
-    required this.toolCallId,
-  });
+  const ToolCallEnd({super.threadId, super.runId, required this.toolCallId});
 
   final String toolCallId;
 }
 
 final class StateDelta extends AgUiEvent {
-  const StateDelta({
-    super.threadId,
-    super.runId,
-    required this.patch,
-  });
+  const StateDelta({super.threadId, super.runId, required this.patch});
 
   final Map<String, dynamic> patch;
 }
