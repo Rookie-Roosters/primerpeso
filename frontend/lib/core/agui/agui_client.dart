@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:protobuf/well_known_types/google/protobuf/struct.pb.dart'
     as structpb;
 
-import '../../features/auth/data/auth_repository.dart';
+import '../api/request_headers.dart';
 import '../../gen/primerpeso/agent/v1/agent.connect.client.dart';
 import '../../gen/primerpeso/agent/v1/agent.pb.dart' as agentv1;
 import 'agui_event.dart';
@@ -54,10 +54,10 @@ abstract class AgUiClient {
 }
 
 class ConnectAgUiClient implements AgUiClient {
-  ConnectAgUiClient({required this.client, required this.accessTokenProvider});
+  ConnectAgUiClient({required this.client, required this.deviceIdProvider});
 
   final AgentServiceClient client;
-  final String? Function() accessTokenProvider;
+  final String Function() deviceIdProvider;
 
   @override
   Stream<AgUiEvent> run(AgUiRunInput input) async* {
@@ -89,7 +89,7 @@ class ConnectAgUiClient implements AgUiClient {
 
     final stream = client.run(
       request,
-      headers: authHeaders(accessTokenProvider()),
+      headers: deviceHeaders(deviceIdProvider()),
     );
     await for (final event in stream) {
       yield AgUiEvent.fromProto(event);

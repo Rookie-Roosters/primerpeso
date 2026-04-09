@@ -27,7 +27,7 @@ Important backend paths:
 - Flutter
 - Buf
 - sqlc
-- Docker, if you want to use local Postgres/MinIO/Mailpit through Compose
+- Docker, if you want to run the local stack or validate runtime behavior end-to-end
 
 ## Generate Code
 
@@ -45,23 +45,31 @@ That does:
 - Dart protobuf/connect generation into `frontend/lib/gen/`
 - sqlc generation from `backend/sql/sqlc.yaml`
 
+## Quick Validation
+
+Run the static validation flow from the repository root:
+
+```bash
+./scripts/validate-local.sh
+```
+
+That runs codegen, backend tests, `flutter pub get`, frontend tests, and
+`flutter analyze`.
+
 ## Run The Backend
 
-Start infrastructure:
+There are two supported local modes.
+
+### Full Stack In Docker
+
+This starts Postgres, MinIO, Mailpit, and the backend container together:
 
 ```bash
 cd backend
 make compose-up
 ```
 
-Run the API locally:
-
-```bash
-cd backend
-make backend-run
-```
-
-The backend listens on `http://localhost:8080` by default.
+The backend listens on `http://localhost:8080`.
 
 Useful local services from Compose:
 
@@ -71,12 +79,51 @@ Useful local services from Compose:
 - Mailpit SMTP: `localhost:1025`
 - Mailpit UI: `http://localhost:8025`
 
-Stop and clean local infra:
+Stop and clean the stack:
 
 ```bash
 cd backend
 make compose-down
 ```
+
+### Backend On Host + Infra In Docker
+
+If you want to run the Go backend directly on your machine, start only the
+supporting services first:
+
+```bash
+cd backend
+make infra-up
+```
+
+Then start the backend on your host with local defaults wired in:
+
+```bash
+cd backend
+make backend-run-local
+```
+
+This uses:
+
+- Postgres at `localhost:5432`
+- MinIO at `localhost:9000`
+- Mailpit at `localhost:1025`
+
+Stop and clean the local services:
+
+```bash
+cd backend
+make infra-down
+```
+
+Important:
+
+- `make compose-up` already starts a backend container on port `8080`. Do not
+  run `make backend-run` or `make backend-run-local` at the same time unless you
+  change ports.
+- `make backend-run-local` uses the non-`kreuzberg` build, so receipt upload
+  works but OCR falls back to the stub extractor. For real OCR validation, use
+  the Dockerized backend build.
 
 ## Run The Frontend
 
@@ -96,6 +143,9 @@ You can override the API base URL with:
 ```bash
 flutter run --dart-define=PRIMERPESO_API_BASE_URL=http://your-host:8080
 ```
+
+For example, if you run the backend remotely or on a physical device, point the
+frontend at that reachable host.
 
 ## Tests
 
@@ -120,9 +170,18 @@ cd backend
 make test
 ```
 
+Runtime smoke checks after the backend is up:
+
+```bash
+curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
+```
+
 ## Notes
 
 - The frontend uses generated Connect-Dart clients from `frontend/lib/gen/`.
 - A vendored `connectrpc` package lives in `frontend/packages/connectrpc/` because the published package version and the protobuf runtime required by the generated Dart code were incompatible in this environment.
 - Receipt originals are stored as encrypted blobs. Sensitive extracted fields are encrypted or anonymized before storage and redacted before model use.
 - The current slice is chat-first: auth, streaming agent events, receipt upload/review, expense confirmation, and score summary are wired; broader finance management remains future work.
+- Google OAuth stays disabled until `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set.
+- Agent chat can run without `XAI_API_KEY`, but it will use fallback replies instead of the xAI-backed model path.

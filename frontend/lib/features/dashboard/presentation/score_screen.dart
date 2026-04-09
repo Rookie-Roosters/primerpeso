@@ -2,13 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
-import 'package:shard/shard.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
 import '../../../gen/primerpeso/finance/v1/finance.pb.dart' as financev1;
-import '../../auth/domain/auth_state.dart';
-import '../../auth/shards/auth_shard.dart';
 
 /// Criterio score screen — arc gauge + factor breakdown cards.
 class ScoreScreen extends StatelessWidget {
@@ -16,51 +13,42 @@ class ScoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ShardBuilder<AuthShard, AuthState>(
-      builder: (context, authState) => ColoredBox(
-        color: warmSurface,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Tu score',
-                      style: TextStyle(
-                        color: ink,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.8,
-                        height: 1.0,
-                      ),
+    return ColoredBox(
+      color: warmSurface,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Tu score',
+                    style: TextStyle(
+                      color: ink,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.8,
+                      height: 1.0,
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Criterio de salud financiera',
-                      style: TextStyle(
-                        color: inkMuted,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                      ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Criterio de salud financiera',
+                    style: TextStyle(
+                      color: inkMuted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 28),
-              Expanded(
-                child:
-                    authState.isAuthenticated &&
-                        authState.accessToken != null &&
-                        authState.accessToken!.isNotEmpty
-                    ? _ScoreSummaryBody(accessToken: authState.accessToken!)
-                    : const _ScoreUnauthenticatedBody(),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 28),
+            const Expanded(child: _ScoreSummaryBody()),
+          ],
         ),
       ),
     );
@@ -68,16 +56,12 @@ class ScoreScreen extends StatelessWidget {
 }
 
 class _ScoreSummaryBody extends StatelessWidget {
-  const _ScoreSummaryBody({required this.accessToken});
-
-  final String accessToken;
+  const _ScoreSummaryBody();
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<financev1.GetScoreSummaryResponse>(
-      future: AppScope.of(
-        context,
-      ).financeRepository.getScoreSummary(accessToken),
+      future: AppScope.of(context).financeRepository.getScoreSummary(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Padding(
@@ -182,24 +166,6 @@ class _ScoreSummaryBody extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _ScoreUnauthenticatedBody extends StatelessWidget {
-  const _ScoreUnauthenticatedBody();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: Text(
-          'Inicia sesión para ver tu score real.',
-          style: TextStyle(color: inkMuted, fontSize: 15, height: 1.5),
-        ),
-      ),
     );
   }
 }

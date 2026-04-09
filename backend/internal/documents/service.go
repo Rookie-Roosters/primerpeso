@@ -41,6 +41,11 @@ type Service struct {
 	crypto    *cryptox.Service
 	blobs     blob.Store
 	extractor OCRExtractor
+	registrar ExpenseRegistrar
+}
+
+type ExpenseRegistrar interface {
+	ConfirmExpenseFromDraft(ctx context.Context, userID string, draft *documentsv1.ReceiptDraft) (*financev1.ConfirmExpenseResponse, error)
 }
 
 type storedLineItem struct {
@@ -52,12 +57,12 @@ type storedLineItem struct {
 }
 
 type normalizedReceipt struct {
-	MerchantName     string
+	MerchantName      string
 	SuggestedCategory string
-	RedactedText     string
-	LineItems        []*documentsv1.ReceiptLineItem
-	Total            *financev1.Money
-	PurchasedAt      *timestamppb.Timestamp
+	RedactedText      string
+	LineItems         []*documentsv1.ReceiptLineItem
+	Total             *financev1.Money
+	PurchasedAt       *timestamppb.Timestamp
 }
 
 var (
@@ -76,6 +81,10 @@ func NewService(logger *slog.Logger, queries *store.Queries, crypto *cryptox.Ser
 		blobs:     blobs,
 		extractor: extractor,
 	}
+}
+
+func (s *Service) SetExpenseRegistrar(registrar ExpenseRegistrar) {
+	s.registrar = registrar
 }
 
 func (s *Service) UploadReceipt(ctx context.Context, req *connect.Request[documentsv1.UploadReceiptRequest]) (*connect.Response[documentsv1.UploadReceiptResponse], error) {
@@ -118,6 +127,7 @@ func (s *Service) UploadReceipt(ctx context.Context, req *connect.Request[docume
 	}
 
 	normalized := s.normalizeReceipt(req.Msg.GetFilename(), ocrText.Content)
+	decision, missingFields, rationale, confidence := extractionDecisionFor(normalized)
 	encryptedMerchantName, err := s.crypto.EncryptString(normalized.MerchantName)
 	if err != nil {
 		return nil, connectx.Internal("failed to encrypt merchant name")
@@ -158,9 +168,31 @@ func (s *Service) UploadReceipt(ctx context.Context, req *connect.Request[docume
 		return nil, connectx.Internal("failed to load receipt draft")
 	}
 
-	return connect.NewResponse(&documentsv1.UploadReceiptResponse{
-		Draft: draft,
-	}), nil
+	response := &documentsv1.UploadReceiptResponse{
+		Draft:         draft,
+		Decision:      decision,
+		MissingFields: missingFields,
+		Rationale:     rationale,
+		Confidence:    confidence,
+	}
+
+	if decision == documentsv1.ExtractionDecision_EXTRACTION_DECISION_AUTO_REGISTER && s.registrar != nil {
+		confirmed, confirmErr := s.registrar.ConfirmExpenseFromDraft(ctx, userID, draft)
+		if confirmErr != nil {
+			s.logger.Warn("auto-register failed, requiring clarification", "error", confirmErr)
+			response.Decision = documentsv1.ExtractionDecision_EXTRACTION_DECISION_NEEDS_CLARIFICATION
+			if !containsString(response.MissingFields, "registration_error") {
+				response.MissingFields = append(response.MissingFields, "registration_error")
+			}
+			response.Rationale = "No pude registrar automaticamente este gasto, revisalo antes de guardar."
+			response.Confidence = minFloat(response.Confidence, 0.5)
+		} else if confirmed != nil {
+			response.Expense = confirmed.GetExpense()
+			response.ScoreSummary = confirmed.GetScoreSummary()
+		}
+	}
+
+	return connect.NewResponse(response), nil
 }
 
 func (s *Service) GetReceiptDraft(ctx context.Context, req *connect.Request[documentsv1.GetReceiptDraftRequest]) (*connect.Response[documentsv1.GetReceiptDraftResponse], error) {
@@ -459,4 +491,42 @@ func moneyFingerprint(money *financev1.Money) string {
 		return ""
 	}
 	return fmt.Sprintf("%s:%d:%d", money.GetCurrencyCode(), money.GetUnits(), money.GetNanos())
+}
+
+func extractionDecisionFor(normalized normalizedReceipt) (documentsv1.ExtractionDecision, []string, string, float64) {
+	missing := make([]string, 0, 2)
+	if strings.TrimSpace(normalized.MerchantName) == "" || normalized.MerchantName == "Comercio sin nombre" {
+		missing = append(missing, "merchant_name")
+	}
+	if normalized.Total == nil || normalized.Total.GetUnits() <= 0 {
+		missing = append(missing, "amount")
+	}
+
+	if len(missing) == 0 {
+		return documentsv1.ExtractionDecision_EXTRACTION_DECISION_AUTO_REGISTER,
+			nil,
+			"Extraccion suficientemente completa para registrar el gasto automaticamente.",
+			0.92
+	}
+
+	return documentsv1.ExtractionDecision_EXTRACTION_DECISION_NEEDS_CLARIFICATION,
+		missing,
+		"Faltan campos criticos o hay ambiguedad en la lectura. Se requiere validacion manual.",
+		0.45
+}
+
+func containsString(values []string, value string) bool {
+	for _, item := range values {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }

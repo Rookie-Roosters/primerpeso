@@ -6,23 +6,24 @@ import '../../gen/primerpeso/agent/v1/agent.connect.client.dart';
 import '../../gen/primerpeso/documents/v1/documents.connect.client.dart';
 import '../../gen/primerpeso/finance/v1/finance.connect.client.dart';
 import '../../gen/primerpeso/identity/v1/identity.connect.client.dart';
-import '../../features/auth/data/auth_repository.dart';
+import '../finance/ledger_refresh_notifier.dart';
 import '../../features/dashboard/data/finance_repository.dart';
 import '../../features/dashboard/data/receipt_repository.dart';
 import 'http_client_factory.dart';
 
 class AppServices {
   AppServices._({
+    required this.deviceId,
     required this.identityClient,
     required this.agentClient,
     required this.receiptClient,
     required this.financeClient,
-    required this.authRepository,
     required this.receiptRepository,
     required this.financeRepository,
+    required this.ledgerRefresh,
   });
 
-  factory AppServices.create() {
+  factory AppServices.create({required String deviceId}) {
     final transport = connect_protocol.Transport(
       baseUrl: _defaultApiBaseUrl(),
       codec: const ProtoCodec(),
@@ -35,24 +36,32 @@ class AppServices {
     final financeClient = FinanceServiceClient(transport);
 
     return AppServices._(
+      deviceId: deviceId,
       identityClient: identityClient,
       agentClient: agentClient,
       receiptClient: receiptClient,
       financeClient: financeClient,
-      authRepository: AuthRepository(client: identityClient),
-      receiptRepository: ReceiptRepository(client: receiptClient),
-      financeRepository: FinanceRepository(client: financeClient),
+      receiptRepository: ReceiptRepository(
+        client: receiptClient,
+        deviceId: deviceId,
+      ),
+      financeRepository: FinanceRepository(
+        client: financeClient,
+        deviceId: deviceId,
+      ),
+      ledgerRefresh: LedgerRefreshNotifier(),
     );
   }
 
+  final String deviceId;
   final IdentityServiceClient identityClient;
   final AgentServiceClient agentClient;
   final ReceiptServiceClient receiptClient;
   final FinanceServiceClient financeClient;
 
-  final AuthRepository authRepository;
   final ReceiptRepository receiptRepository;
   final FinanceRepository financeRepository;
+  final LedgerRefreshNotifier ledgerRefresh;
 }
 
 String _defaultApiBaseUrl() {

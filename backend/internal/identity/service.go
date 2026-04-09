@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,6 +51,8 @@ type authExchangePayload struct {
 	ExpiresAt     time.Time `json:"expires_at"`
 }
 
+var deviceIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._:-]{8,128}$`)
+
 func NewService(cfg config.Config, logger *slog.Logger, module *Module, queries *store.Queries, crypto *cryptox.Service) *Service {
 	return &Service{
 		cfg:     cfg,
@@ -74,19 +77,31 @@ func (s *Service) AuthMiddleware(publicPaths map[string]struct{}) func(http.Hand
 			}
 
 			authHeader := r.Header.Get("Authorization")
-			if !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-				http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+				token := strings.TrimSpace(authHeader[len("Bearer "):])
+				userID, err := s.module.JWTService.ValidateToken(token)
+				if err != nil {
+					http.Error(w, "invalid bearer token", http.StatusUnauthorized)
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(authn.WithUserID(r.Context(), userID)))
 				return
 			}
 
-			token := strings.TrimSpace(authHeader[len("Bearer "):])
-			userID, err := s.module.JWTService.ValidateToken(token)
-			if err != nil {
-				http.Error(w, "invalid bearer token", http.StatusUnauthorized)
+			deviceID := strings.TrimSpace(r.Header.Get("X-Device-ID"))
+			if deviceID == "" {
+				http.Error(w, "missing identity headers", http.StatusUnauthorized)
+				return
+			}
+			if !deviceIDPattern.MatchString(deviceID) {
+				http.Error(w, "invalid X-Device-ID", http.StatusUnauthorized)
 				return
 			}
 
-			next.ServeHTTP(w, r.WithContext(authn.WithUserID(r.Context(), userID)))
+			next.ServeHTTP(
+				w,
+				r.WithContext(authn.WithUserID(r.Context(), "device:"+deviceID)),
+			)
 		})
 	}
 }
@@ -300,6 +315,11 @@ func (s *Service) ResetPassword(ctx context.Context, req *connect.Request[identi
 
 func (s *Service) GoogleCallbackHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.module.GoogleEnabled() || s.module.OAuthAPI == nil {
+			http.Error(w, "google oauth is not configured", http.StatusNotFound)
+			return
+		}
+
 		ctx := r.Context()
 		_ = s.queries.DeleteExpiredMobileOAuthExchanges(ctx)
 

@@ -2,9 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
@@ -25,6 +30,36 @@ import (
 type scoreProvider interface {
 	GetScoreSummaryData(ctx context.Context, userID string) (*financev1.ScoreSummary, error)
 	ListRecentExpenses(ctx context.Context, userID string, limit int32) ([]*financev1.Expense, error)
+	RegisterManualMovement(
+		ctx context.Context,
+		userID string,
+		kind string,
+		preferUpdate bool,
+		merchantName string,
+		category string,
+		currencyCode string,
+		amountUnits int64,
+		occurredAt time.Time,
+	) (*financev1.ConfirmExpenseResponse, error)
+	UpdateManualMovement(
+		ctx context.Context,
+		userID string,
+		kind string,
+		merchantName string,
+		category string,
+		currencyCode string,
+		amountUnits int64,
+		occurredAt time.Time,
+		temporalRef string,
+	) (*financev1.ConfirmExpenseResponse, error)
+	DeleteMovement(
+		ctx context.Context,
+		userID string,
+		kind string,
+		merchantName string,
+		temporalRef string,
+	) (*financev1.Expense, error)
+	UndoLatestMovement(ctx context.Context, userID string) (*financev1.Expense, error)
 }
 
 type receiptProvider interface {
@@ -33,11 +68,12 @@ type receiptProvider interface {
 }
 
 type Service struct {
-	logger   *slog.Logger
-	model    *genkit.Genkit
-	cfg      config.Config
-	finance  scoreProvider
-	receipts receiptProvider
+	logger       *slog.Logger
+	model        *genkit.Genkit
+	cfg          config.Config
+	finance      scoreProvider
+	receipts     receiptProvider
+	systemPrompt string
 }
 
 func NewService(ctx context.Context, cfg config.Config, logger *slog.Logger, finance scoreProvider, receipts receiptProvider) *Service {
@@ -59,6 +95,12 @@ func NewService(ctx context.Context, cfg config.Config, logger *slog.Logger, fin
 			genkit.WithDefaultModel("xai/"+cfg.XAIModel),
 		)
 	}
+
+	prompt, err := loadSystemPrompt(cfg.AgentSystemPromptPath)
+	if err != nil {
+		logger.Warn("failed to load external agent system prompt, using fallback", "path", cfg.AgentSystemPromptPath, "error", err)
+	}
+	service.systemPrompt = prompt
 
 	return service
 }
@@ -119,6 +161,43 @@ func (s *Service) applyTools(
 	var contextParts []string
 	lower := strings.ToLower(lastUserMessage)
 
+	if isLedgerRelated(lower) {
+		toolCallID := uuid.NewString()
+		if err := send(toolStart(threadID, runID, toolCallID, "list_recent_movements")); err != nil {
+			return "", err
+		}
+		if err := send(toolArgs(threadID, runID, toolCallID, `{"limit":10}`)); err != nil {
+			return "", err
+		}
+		movements, err := s.finance.ListRecentExpenses(ctx, userID, 10)
+		if err != nil {
+			s.logger.Warn("failed to prefetch recent movements", "error", err)
+			if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+				return "", err
+			}
+			contextParts = append(contextParts, "AUTO_REPLY:No pude consultar tu historial en este momento. Inténtalo de nuevo en unos segundos.")
+			contextParts = append(contextParts, "El pre-listado de movimientos fallo; se bloquearon mutaciones de ledger en esta corrida.")
+			return strings.Join(contextParts, "\n"), nil
+		}
+		if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+			return "", err
+		}
+		contextParts = append(contextParts, movementContext(movements))
+
+		action := s.resolveLedgerAction(ctx, request, lastUserMessage, movements)
+		if shouldSkipRegistration(lower) && (action.Action == "create" || action.Action == "update") {
+			contextParts = append(contextParts, "AUTO_REPLY:Entendido, no registro ni modifico ese movimiento.")
+		} else {
+			ledgerContext, err := s.executeLedgerAction(ctx, send, userID, threadID, runID, lower, action, movements)
+			if err != nil {
+				return "", err
+			}
+			if ledgerContext != "" {
+				contextParts = append(contextParts, ledgerContext)
+			}
+		}
+	}
+
 	if shouldFetchScore(lower) {
 		toolCallID := uuid.NewString()
 		if err := send(toolStart(threadID, runID, toolCallID, "get_score_summary")); err != nil {
@@ -136,24 +215,6 @@ func (s *Service) applyTools(
 			return "", err
 		}
 		if err := send(scoreDelta(threadID, runID, scoreSummary)); err != nil {
-			return "", err
-		}
-	}
-
-	if shouldFetchExpenses(lower) {
-		toolCallID := uuid.NewString()
-		if err := send(toolStart(threadID, runID, toolCallID, "list_recent_expenses")); err != nil {
-			return "", err
-		}
-		if err := send(toolArgs(threadID, runID, toolCallID, `{"limit":5}`)); err != nil {
-			return "", err
-		}
-		expenses, err := s.finance.ListRecentExpenses(ctx, userID, 5)
-		if err != nil {
-			return "", err
-		}
-		contextParts = append(contextParts, expenseContext(expenses))
-		if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
 			return "", err
 		}
 	}
@@ -204,8 +265,443 @@ func (s *Service) applyTools(
 	return strings.Join(contextParts, "\n"), nil
 }
 
+type ledgerAction struct {
+	Action        string   `json:"action"`
+	Kind          string   `json:"kind,omitempty"`
+	AmountUnits   *int64   `json:"amount_units,omitempty"`
+	Currency      string   `json:"currency,omitempty"`
+	Merchant      string   `json:"merchant,omitempty"`
+	Category      string   `json:"category,omitempty"`
+	TemporalRef   string   `json:"temporal_reference,omitempty"`
+	Confidence    float64  `json:"confidence,omitempty"`
+	MissingFields []string `json:"missing_fields,omitempty"`
+}
+
+func (s *Service) resolveLedgerAction(
+	ctx context.Context,
+	request *agentv1.RunRequest,
+	lastUserMessage string,
+	movements []*financev1.Expense,
+) ledgerAction {
+	if action, ok := s.extractLedgerActionWithModel(ctx, request, lastUserMessage, movements); ok {
+		return action
+	}
+	return heuristicLedgerAction(lastUserMessage)
+}
+
+func (s *Service) extractLedgerActionWithModel(
+	ctx context.Context,
+	request *agentv1.RunRequest,
+	lastUserMessage string,
+	movements []*financev1.Expense,
+) (ledgerAction, bool) {
+	if s.model == nil {
+		return ledgerAction{}, false
+	}
+	raw, err := s.generateText(ctx, buildLedgerActionPrompt(request, lastUserMessage, movements))
+	if err != nil {
+		s.logger.Warn("ledger action extraction failed", "error", err)
+		return ledgerAction{}, false
+	}
+	action, ok := parseLedgerActionJSON(raw)
+	if !ok {
+		return ledgerAction{}, false
+	}
+	if !validateLedgerAction(&action) {
+		return ledgerAction{}, false
+	}
+	return action, true
+}
+
+func validateLedgerAction(action *ledgerAction) bool {
+	if action == nil {
+		return false
+	}
+	action.Action = strings.ToLower(strings.TrimSpace(action.Action))
+	action.Kind = normalizeLedgerKind(action.Kind)
+	action.Currency = firstNonEmpty(strings.ToUpper(strings.TrimSpace(action.Currency)), "MXN")
+	action.Merchant = strings.TrimSpace(action.Merchant)
+	action.Category = strings.TrimSpace(action.Category)
+	action.TemporalRef = normalizeTemporalReference(action.TemporalRef)
+
+	switch action.Action {
+	case "none":
+		return true
+	case "list":
+		if action.Kind == "" {
+			action.Kind = "any"
+		}
+		return true
+	case "undo":
+		return true
+	case "create":
+		if action.Kind == "" {
+			action.MissingFields = append(action.MissingFields, "tipo (gasto o ingreso)")
+		}
+		if action.AmountUnits == nil || *action.AmountUnits <= 0 {
+			action.MissingFields = append(action.MissingFields, "monto")
+		}
+		return len(action.MissingFields) == 0
+	case "update":
+		if action.Kind == "" {
+			action.MissingFields = append(action.MissingFields, "tipo (gasto o ingreso)")
+		}
+		if action.AmountUnits == nil || *action.AmountUnits <= 0 {
+			action.MissingFields = append(action.MissingFields, "monto final")
+		}
+		return len(action.MissingFields) == 0
+	case "delete":
+		if action.Kind == "" {
+			action.Kind = "expense"
+		}
+		return action.Merchant != "" || action.TemporalRef != ""
+	default:
+		return false
+	}
+}
+
+func (s *Service) executeLedgerAction(
+	ctx context.Context,
+	send func(*agentv1.RunEvent) error,
+	userID, threadID, runID string,
+	lowerUserMessage string,
+	action ledgerAction,
+	movements []*financev1.Expense,
+) (string, error) {
+	switch action.Action {
+	case "undo":
+		return s.executeUndoTool(ctx, send, userID, threadID, runID)
+	case "list":
+		return "AUTO_REPLY:" + summarizeMovementsForUser(movements, action.Kind), nil
+	case "create":
+		return s.executeCreateMovementTool(ctx, send, userID, threadID, runID, lowerUserMessage, action)
+	case "update":
+		return s.executeUpdateMovementTool(ctx, send, userID, threadID, runID, lowerUserMessage, action)
+	case "delete":
+		return s.executeDeleteMovementTool(ctx, send, userID, threadID, runID, action)
+	default:
+		// Fallback for ledger turns with no explicit action: answer from listed context.
+		return "AUTO_REPLY:" + summarizeMovementsForUser(movements, inferMovementKindFromQuestion(lowerUserMessage)), nil
+	}
+}
+
+func (s *Service) executeUndoTool(
+	ctx context.Context,
+	send func(*agentv1.RunEvent) error,
+	userID, threadID, runID string,
+) (string, error) {
+	toolCallID := uuid.NewString()
+	if err := send(toolStart(threadID, runID, toolCallID, "undo_last_registration")); err != nil {
+		return "", err
+	}
+	if err := send(toolArgs(threadID, runID, toolCallID, `{"mode":"latest"}`)); err != nil {
+		return "", err
+	}
+	removed, err := s.finance.UndoLatestMovement(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+		return "", err
+	}
+	if removed == nil {
+		return "AUTO_REPLY:No encontré movimientos para deshacer.", nil
+	}
+	if err := send(ledgerDelta(threadID, runID, "undo", removed)); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"AUTO_REPLY:Listo, deshice el último movimiento: %s por %d %s.",
+		removed.GetDisplayTitle(),
+		abs64(removed.GetAmount().GetUnits()),
+		firstNonEmpty(removed.GetAmount().GetCurrencyCode(), "MXN"),
+	), nil
+}
+
+func (s *Service) executeCreateMovementTool(
+	ctx context.Context,
+	send func(*agentv1.RunEvent) error,
+	userID, threadID, runID string,
+	lowerUserMessage string,
+	action ledgerAction,
+) (string, error) {
+	if len(action.MissingFields) > 0 {
+		return "AUTO_REPLY:Para registrarlo necesito " + strings.Join(action.MissingFields, " y ") + ".", nil
+	}
+	toolName := "register_expense"
+	if action.Kind == "income" {
+		toolName = "register_income"
+	}
+	toolCallID := uuid.NewString()
+	if err := send(toolStart(threadID, runID, toolCallID, toolName)); err != nil {
+		return "", err
+	}
+	args := jsonObject(map[string]any{
+		"kind":     action.Kind,
+		"amount":   *action.AmountUnits,
+		"currency": action.Currency,
+		"merchant": firstNonEmpty(action.Merchant, manualLabelForKind(action.Kind)),
+		"category": firstNonEmpty(action.Category, inferCategory(lowerUserMessage, action.Kind, action.Merchant)),
+	})
+	if err := send(toolArgs(threadID, runID, toolCallID, args)); err != nil {
+		return "", err
+	}
+	registered, err := s.finance.RegisterManualMovement(
+		ctx,
+		userID,
+		action.Kind,
+		false,
+		firstNonEmpty(action.Merchant, manualLabelForKind(action.Kind)),
+		firstNonEmpty(action.Category, inferCategory(lowerUserMessage, action.Kind, action.Merchant)),
+		action.Currency,
+		*action.AmountUnits,
+		time.Now(),
+	)
+	if err != nil {
+		return "", err
+	}
+	if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+		return "", err
+	}
+	entry := registered.GetExpense()
+	if entry == nil {
+		return "AUTO_REPLY:No pude confirmar el registro de ese movimiento.", nil
+	}
+	if err := send(ledgerDelta(threadID, runID, "register", entry)); err != nil {
+		return "", err
+	}
+	if summary := registered.GetScoreSummary(); summary != nil {
+		if err := send(scoreDelta(threadID, runID, summary)); err != nil {
+			return "", err
+		}
+	}
+	return "AUTO_REPLY:" + formatRegistrationConfirmation(entry, action.Kind), nil
+}
+
+func (s *Service) executeUpdateMovementTool(
+	ctx context.Context,
+	send func(*agentv1.RunEvent) error,
+	userID, threadID, runID string,
+	lowerUserMessage string,
+	action ledgerAction,
+) (string, error) {
+	if len(action.MissingFields) > 0 {
+		return "AUTO_REPLY:Para corregirlo necesito " + strings.Join(action.MissingFields, " y ") + ".", nil
+	}
+	toolCallID := uuid.NewString()
+	if err := send(toolStart(threadID, runID, toolCallID, "update_movement")); err != nil {
+		return "", err
+	}
+	args := jsonObject(map[string]any{
+		"kind":               action.Kind,
+		"amount":             *action.AmountUnits,
+		"currency":           action.Currency,
+		"merchant":           action.Merchant,
+		"category":           firstNonEmpty(action.Category, inferCategory(lowerUserMessage, action.Kind, action.Merchant)),
+		"temporal_reference": action.TemporalRef,
+	})
+	if err := send(toolArgs(threadID, runID, toolCallID, args)); err != nil {
+		return "", err
+	}
+	updated, err := s.finance.UpdateManualMovement(
+		ctx,
+		userID,
+		action.Kind,
+		action.Merchant,
+		firstNonEmpty(action.Category, inferCategory(lowerUserMessage, action.Kind, action.Merchant)),
+		action.Currency,
+		*action.AmountUnits,
+		time.Now(),
+		action.TemporalRef,
+	)
+	if err != nil {
+		return "", err
+	}
+	if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+		return "", err
+	}
+	if updated == nil || updated.GetExpense() == nil {
+		return "AUTO_REPLY:No encontré un movimiento que coincida para actualizar.", nil
+	}
+	entry := updated.GetExpense()
+	if err := send(ledgerDelta(threadID, runID, "update", entry)); err != nil {
+		return "", err
+	}
+	if summary := updated.GetScoreSummary(); summary != nil {
+		if err := send(scoreDelta(threadID, runID, summary)); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf(
+		"AUTO_REPLY:Movimiento actualizado: %s por %d %s.",
+		firstNonEmpty(entry.GetDisplayTitle(), entry.GetMerchantName()),
+		abs64(entry.GetAmount().GetUnits()),
+		firstNonEmpty(entry.GetAmount().GetCurrencyCode(), "MXN"),
+	), nil
+}
+
+func (s *Service) executeDeleteMovementTool(
+	ctx context.Context,
+	send func(*agentv1.RunEvent) error,
+	userID, threadID, runID string,
+	action ledgerAction,
+) (string, error) {
+	toolCallID := uuid.NewString()
+	if err := send(toolStart(threadID, runID, toolCallID, "delete_movement")); err != nil {
+		return "", err
+	}
+	args := jsonObject(map[string]any{
+		"kind":               firstNonEmpty(action.Kind, "expense"),
+		"merchant":           action.Merchant,
+		"temporal_reference": action.TemporalRef,
+	})
+	if err := send(toolArgs(threadID, runID, toolCallID, args)); err != nil {
+		return "", err
+	}
+	deleted, err := s.finance.DeleteMovement(
+		ctx,
+		userID,
+		firstNonEmpty(action.Kind, "expense"),
+		action.Merchant,
+		action.TemporalRef,
+	)
+	if err != nil {
+		return "", err
+	}
+	if err := send(toolEnd(threadID, runID, toolCallID)); err != nil {
+		return "", err
+	}
+	if deleted == nil {
+		return "AUTO_REPLY:No encontré un movimiento que coincida para eliminar.", nil
+	}
+	if err := send(ledgerDelta(threadID, runID, "delete", deleted)); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"AUTO_REPLY:Movimiento eliminado: %s por %d %s.",
+		firstNonEmpty(deleted.GetDisplayTitle(), deleted.GetMerchantName()),
+		abs64(deleted.GetAmount().GetUnits()),
+		firstNonEmpty(deleted.GetAmount().GetCurrencyCode(), "MXN"),
+	), nil
+}
+
+func buildLedgerActionPrompt(
+	request *agentv1.RunRequest,
+	lastUserMessage string,
+	movements []*financev1.Expense,
+) string {
+	return fmt.Sprintf(
+		`Extrae la intención de ledger del usuario y responde SOLO JSON válido.
+Formato JSON:
+{"action":"none|list|create|update|delete|undo","kind":"expense|income|any","amount_units":number,"currency":"MXN","merchant":"texto","category":"texto","temporal_reference":"today|yesterday|latest|","confidence":0.0,"missing_fields":["campo"]}
+
+Herramientas disponibles:
+%s
+
+Movimientos recientes:
+%s
+
+Mensaje del usuario:
+%s`,
+		formatToolCatalog(request.GetTools()),
+		movementContext(movements),
+		lastUserMessage,
+	)
+}
+
+func heuristicLedgerAction(lastUserMessage string) ledgerAction {
+	lower := strings.ToLower(lastUserMessage)
+	if shouldUndoRegistration(lower) {
+		return ledgerAction{Action: "undo", Kind: "any", Currency: "MXN"}
+	}
+	if shouldDeleteMovement(lower) {
+		kind, ok := detectMovementKind(lower)
+		if !ok {
+			kind = "expense"
+		}
+		return ledgerAction{
+			Action:      "delete",
+			Kind:        kind,
+			Merchant:    extractCounterparty(lastUserMessage, kind),
+			TemporalRef: detectTemporalReference(lower),
+			Currency:    "MXN",
+		}
+	}
+	if intent, ok := parseManualRegistrationIntent(lastUserMessage); ok {
+		action := "create"
+		if intent.preferUpdate {
+			action = "update"
+		}
+		amount := intent.amountUnits
+		return ledgerAction{
+			Action:      action,
+			Kind:        intent.kind,
+			AmountUnits: &amount,
+			Currency:    intent.currencyCode,
+			Merchant:    intent.merchantName,
+			Category:    intent.category,
+			TemporalRef: detectTemporalReference(lower),
+		}
+	}
+	if shouldListMovements(lower) {
+		return ledgerAction{
+			Action: "list",
+			Kind:   inferMovementKindFromQuestion(lower),
+		}
+	}
+	return ledgerAction{Action: "none", Kind: inferMovementKindFromQuestion(lower)}
+}
+
+func parseLedgerActionJSON(raw string) (ledgerAction, bool) {
+	payload := extractJSONObject(raw)
+	if payload == "" {
+		return ledgerAction{}, false
+	}
+	var out ledgerAction
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		return ledgerAction{}, false
+	}
+	return out, true
+}
+
+func extractJSONObject(raw string) string {
+	start := strings.Index(raw, "{")
+	end := strings.LastIndex(raw, "}")
+	if start < 0 || end <= start {
+		return ""
+	}
+	return raw[start : end+1]
+}
+
+func (s *Service) generateText(ctx context.Context, prompt string) (string, error) {
+	if s.model == nil {
+		return "", fmt.Errorf("model is not configured")
+	}
+	var out strings.Builder
+	for chunk, err := range genkit.GenerateStream(ctx, s.model, ai.WithPrompt(prompt)) {
+		if err != nil {
+			return "", err
+		}
+		if chunk == nil {
+			continue
+		}
+		if chunk.Done {
+			if text := strings.TrimSpace(chunk.Response.Text()); text != "" && out.Len() == 0 {
+				out.WriteString(text)
+			}
+			continue
+		}
+		out.WriteString(chunk.Chunk.Text())
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
 func (s *Service) generateReply(ctx context.Context, request *agentv1.RunRequest, lastUserMessage, toolContext string) string {
-	prompt := buildPrompt(request, lastUserMessage, toolContext)
+	if auto := extractAutoReply(toolContext); auto != "" {
+		return auto
+	}
+
+	prompt := buildPrompt(s.systemPrompt, request, lastUserMessage, toolContext)
 	if s.model == nil {
 		return fallbackReply(lastUserMessage, toolContext)
 	}
@@ -232,11 +728,14 @@ func (s *Service) generateReply(ctx context.Context, request *agentv1.RunRequest
 	if result == "" {
 		return fallbackReply(lastUserMessage, toolContext)
 	}
+	if shouldAttemptAutoRegistration(strings.ToLower(lastUserMessage)) && looksLikeManualInstruction(result) {
+		return "Lo gestiono yo directamente. Si quieres corregir un movimiento, dime el monto final y el comercio, y lo actualizo."
+	}
 
 	return result
 }
 
-func buildPrompt(request *agentv1.RunRequest, lastUserMessage, toolContext string) string {
+func buildPrompt(systemPrompt string, request *agentv1.RunRequest, lastUserMessage, toolContext string) string {
 	var conversation strings.Builder
 	for _, message := range request.GetMessages() {
 		if strings.TrimSpace(message.GetContent()) == "" {
@@ -248,11 +747,15 @@ func buildPrompt(request *agentv1.RunRequest, lastUserMessage, toolContext strin
 		conversation.WriteString("\n")
 	}
 
+	basePrompt := strings.TrimSpace(systemPrompt)
+	if basePrompt == "" {
+		basePrompt = fallbackSystemPrompt
+	}
 	return fmt.Sprintf(
-		`Eres Peso, un asistente financiero para PrimerPeso.
-Responde siempre en espanol claro y breve.
-Tu alcance es solo finanzas personales, tickets, gastos, puntaje y navegacion dentro de la app.
-No pidas ni expongas datos sensibles completos.
+		`%s
+
+Herramientas disponibles en esta corrida:
+%s
 
 Contexto de herramientas:
 %s
@@ -262,6 +765,8 @@ Conversacion:
 
 Ultimo mensaje del usuario:
 %s`,
+		basePrompt,
+		formatToolCatalog(request.GetTools()),
 		toolContext,
 		conversation.String(),
 		lastUserMessage,
@@ -270,6 +775,14 @@ Ultimo mensaje del usuario:
 
 func fallbackReply(lastUserMessage, toolContext string) string {
 	switch {
+	case shouldUndoRegistration(strings.ToLower(lastUserMessage)):
+		return "Listo, revierto el ultimo movimiento registrado y te confirmo como quedo."
+	case shouldSkipRegistration(strings.ToLower(lastUserMessage)):
+		return "Entendido, no registro ese movimiento."
+	case parseManualIntentOnly(lastUserMessage):
+		return "Puedo registrar ese movimiento por ti de inmediato y reflejarlo en tu historial."
+	case shouldAttemptAutoRegistration(strings.ToLower(lastUserMessage)):
+		return "Puedo registrarlo por ti en automático; compárteme monto exacto y si es gasto o ingreso."
 	case shouldFetchScore(strings.ToLower(lastUserMessage)):
 		return "Ya tengo tu contexto financiero reciente. Puedo explicarte tu puntaje actual y los factores que mas lo empujan hacia arriba o hacia abajo."
 	case shouldFetchExpenses(strings.ToLower(lastUserMessage)):
@@ -297,11 +810,164 @@ func shouldFetchScore(text string) bool {
 }
 
 func shouldFetchExpenses(text string) bool {
-	return strings.Contains(text, "gasto") || strings.Contains(text, "historial") || strings.Contains(text, "movimiento")
+	return shouldListMovements(text)
 }
 
 func shouldFetchReceipt(text string) bool {
 	return strings.Contains(text, "ticket") || strings.Contains(text, "recibo") || strings.Contains(text, "voucher")
+}
+
+func isLedgerRelated(text string) bool {
+	return containsAny(
+		text,
+		"gasto", "gastos", "egreso", "egresos",
+		"ingreso", "ingresos", "movimiento", "movimientos", "historial", "balance",
+		"registr", "actualiz", "corrig", "elimin", "borr", "deshaz", "deshacer",
+		"me depositaron", "me pagaron", "me cayeron", "me gast", "pagué", "pague",
+	)
+}
+
+func shouldListMovements(text string) bool {
+	return containsAny(
+		text,
+		"qué gastos", "que gastos",
+		"qué ingresos", "que ingresos",
+		"qué movimientos", "que movimientos",
+		"lista", "historial", "movimientos recientes", "mis gastos", "mis ingresos",
+	)
+}
+
+func shouldDeleteMovement(text string) bool {
+	return containsAny(
+		text,
+		"borra", "elimina", "eliminar", "quita", "quita el", "borrar", "remueve",
+	)
+}
+
+func inferMovementKindFromQuestion(text string) string {
+	switch {
+	case containsAny(text, "ingreso", "ingresos", "depositaron", "pagaron"):
+		return "income"
+	case containsAny(text, "gasto", "gastos", "egreso", "egresos"):
+		return "expense"
+	default:
+		return "any"
+	}
+}
+
+func manualLabelForKind(kind string) string {
+	if kind == "income" {
+		return "Ingreso manual"
+	}
+	return "Gasto manual"
+}
+
+func summarizeMovementsForUser(expenses []*financev1.Expense, kind string) string {
+	filtered := filterMovementsByKind(expenses, kind)
+	if len(filtered) == 0 {
+		switch kind {
+		case "income":
+			return "No encontré ingresos recientes registrados."
+		case "expense":
+			return "No encontré gastos recientes registrados."
+		default:
+			return "No encontré movimientos recientes registrados."
+		}
+	}
+
+	parts := make([]string, 0, len(filtered))
+	for _, expense := range filtered {
+		parts = append(parts, fmt.Sprintf("%s %d %s", firstNonEmpty(expense.GetDisplayTitle(), expense.GetMerchantName()), abs64(expense.GetAmount().GetUnits()), firstNonEmpty(expense.GetAmount().GetCurrencyCode(), "MXN")))
+	}
+	switch kind {
+	case "income":
+		return "Tus ingresos recientes: " + strings.Join(parts, "; ")
+	case "expense":
+		return "Tus gastos recientes: " + strings.Join(parts, "; ")
+	default:
+		return "Tus movimientos recientes: " + strings.Join(parts, "; ")
+	}
+}
+
+func filterMovementsByKind(expenses []*financev1.Expense, kind string) []*financev1.Expense {
+	if kind == "" || kind == "any" {
+		return expenses
+	}
+	filtered := make([]*financev1.Expense, 0, len(expenses))
+	for _, entry := range expenses {
+		if entry == nil || entry.GetAmount() == nil {
+			continue
+		}
+		if kind == "income" && entry.GetAmount().GetUnits() < 0 {
+			filtered = append(filtered, entry)
+		}
+		if kind == "expense" && entry.GetAmount().GetUnits() >= 0 {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func detectTemporalReference(text string) string {
+	switch {
+	case containsAny(text, "ayer", "yesterday"):
+		return "yesterday"
+	case containsAny(text, "hoy", "today"):
+		return "today"
+	case containsAny(text, "ultimo", "último", "latest", "reciente"):
+		return "latest"
+	default:
+		return ""
+	}
+}
+
+func normalizeTemporalReference(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "yesterday", "ayer":
+		return "yesterday"
+	case "today", "hoy":
+		return "today"
+	case "latest", "ultimo", "último":
+		return "latest"
+	default:
+		return ""
+	}
+}
+
+func normalizeLedgerKind(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "income", "ingreso", "ingresos":
+		return "income"
+	case "expense", "gasto", "gastos", "egreso", "egresos":
+		return "expense"
+	case "any", "todos", "movimientos":
+		return "any"
+	default:
+		return ""
+	}
+}
+
+func formatToolCatalog(tools []*agentv1.ToolDefinition) string {
+	if len(tools) == 0 {
+		return "Sin catálogo explícito de tools."
+	}
+	lines := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		if tool == nil {
+			continue
+		}
+		line := fmt.Sprintf("- %s: %s", tool.GetName(), strings.TrimSpace(tool.GetDescription()))
+		if params := tool.GetParameters(); params != nil {
+			if serialized, err := json.Marshal(params.AsMap()); err == nil && string(serialized) != "{}" {
+				line += " params=" + string(serialized)
+			}
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return "Sin catálogo explícito de tools."
+	}
+	return strings.Join(lines, "\n")
 }
 
 func navigationFor(text string) (route string, toolName string) {
@@ -319,16 +985,20 @@ func navigationFor(text string) (route string, toolName string) {
 	}
 }
 
-func expenseContext(expenses []*financev1.Expense) string {
+func movementContext(expenses []*financev1.Expense) string {
 	if len(expenses) == 0 {
-		return "No hay gastos confirmados recientes."
+		return "No hay movimientos confirmados recientes."
 	}
 
 	parts := make([]string, 0, len(expenses))
 	for _, expense := range expenses {
-		parts = append(parts, fmt.Sprintf("%s: %d %s en %s", expense.GetMerchantName(), expense.GetAmount().GetUnits(), expense.GetAmount().GetCurrencyCode(), expense.GetCategory()))
+		kind := "gasto"
+		if expense.GetAmount().GetUnits() < 0 {
+			kind = "ingreso"
+		}
+		parts = append(parts, fmt.Sprintf("%s: %d %s en %s (%s)", firstNonEmpty(expense.GetMerchantName(), expense.GetDisplayTitle()), abs64(expense.GetAmount().GetUnits()), expense.GetAmount().GetCurrencyCode(), expense.GetCategory(), kind))
 	}
-	return "Gastos recientes: " + strings.Join(parts, "; ")
+	return "Movimientos recientes: " + strings.Join(parts, "; ")
 }
 
 func stateString(state *structpb.Struct, key string) string {
@@ -484,6 +1154,26 @@ func scoreDelta(threadID, runID string, summary *financev1.ScoreSummary) *agentv
 	}
 }
 
+func ledgerDelta(threadID, runID, action string, expense *financev1.Expense) *agentv1.RunEvent {
+	delta, _ := structpb.NewStruct(map[string]any{
+		"ledger": map[string]any{
+			"updated": true,
+			"action":  action,
+			"id":      expense.GetId(),
+		},
+	})
+
+	return &agentv1.RunEvent{
+		Event: &agentv1.RunEvent_StateDelta{
+			StateDelta: &agentv1.StateDelta{
+				ThreadId: threadID,
+				RunId:    runID,
+				Delta:    delta,
+			},
+		},
+	}
+}
+
 func splitChunks(text string, size int) []string {
 	if size <= 0 || text == "" {
 		return []string{text}
@@ -519,4 +1209,366 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+type manualRegistrationIntent struct {
+	kind         string
+	preferUpdate bool
+	merchantName string
+	category     string
+	currencyCode string
+	amountUnits  int64
+}
+
+var amountPattern = regexp.MustCompile(`\d[\d\.,]*`)
+var trailingPunctuation = regexp.MustCompile(`[!?.,;:]+$`)
+
+func parseManualRegistrationIntent(text string) (*manualRegistrationIntent, bool) {
+	lower := strings.ToLower(text)
+	kind, ok := detectMovementKind(lower)
+	if !ok {
+		return nil, false
+	}
+	amountUnits, ok := parseAmountUnits(text)
+	if !ok || amountUnits <= 0 {
+		return nil, false
+	}
+	merchant := extractCounterparty(text, kind)
+	category := inferCategory(lower, kind, merchant)
+
+	return &manualRegistrationIntent{
+		kind:         kind,
+		preferUpdate: isUpdateIntent(lower),
+		merchantName: merchant,
+		category:     category,
+		currencyCode: "MXN",
+		amountUnits:  amountUnits,
+	}, true
+}
+
+func parseManualIntentOnly(text string) bool {
+	_, ok := parseManualRegistrationIntent(text)
+	return ok
+}
+
+func detectMovementKind(lowerText string) (string, bool) {
+	switch {
+	case hasRegistrationCommand(lowerText) && containsAny(lowerText, "ingreso", "nomina", "nómina", "sueldo", "salario"):
+		return "income", true
+	case hasRegistrationCommand(lowerText) && containsAny(lowerText, "gasto", "egreso", "compra", "pago", "ticket", "recibo"):
+		return "expense", true
+	case containsAny(lowerText, "que registr", "que registre", "que registré") && containsAny(lowerText, "en realidad", "era de", "fue de", "fueron"):
+		if containsAny(lowerText, "ingreso", "nomina", "nómina", "sueldo", "salario") {
+			return "income", true
+		}
+		return "expense", true
+	case containsAny(lowerText, "el gasto de ", "el gasto del ", "gasto de ", "gasto del ") && containsAny(lowerText, "actualiza", "actualíz", "corrige", "en realidad", "fueron", "fue"):
+		return "expense", true
+	case containsAny(lowerText,
+		"me gaste", "me gasté", "gaste", "gasté", "pague", "pagué",
+		"compre", "compré", "me costo", "me costó", "pague", "pagué",
+	):
+		return "expense", true
+	case containsAny(lowerText,
+		"me pagaron", "recibi", "recibí", "ingrese", "ingresé", "gane",
+		"gané", "cobre", "cobré", "depositaron", "me depositaron", "me llego", "me llegó",
+		"me cayeron", "me cayo", "me cayó",
+	):
+		return "income", true
+	default:
+		return "", false
+	}
+}
+
+func parseAmountUnits(text string) (int64, bool) {
+	type candidate struct {
+		amount int64
+		score  int
+		start  int
+	}
+	candidates := make([]candidate, 0, 4)
+	lower := strings.ToLower(text)
+	for _, span := range amountPattern.FindAllStringIndex(text, -1) {
+		start, end := span[0], span[1]
+		if adjacentToLetter(text, start, end) {
+			continue
+		}
+		token := text[start:end]
+		raw := strings.TrimSpace(token)
+		lastSep := strings.LastIndexAny(raw, ".,")
+		integerPart := raw
+		if lastSep > 0 && len(raw)-lastSep-1 <= 2 {
+			integerPart = raw[:lastSep]
+		}
+		digits := onlyDigits(integerPart)
+		if digits == "" {
+			continue
+		}
+		parsed, err := strconv.ParseInt(digits, 10, 64)
+		if err != nil || parsed <= 0 {
+			continue
+		}
+		score := 0
+		if end < len(lower) && containsAny(lower[end:minInt(end+18, len(lower))], "peso", "mxn") {
+			score += 120
+		}
+		if start > 0 && text[start-1] == '$' {
+			score += 100
+		}
+		if start >= 3 && strings.Contains(lower[maxInt(0, start-6):start], "de ") {
+			score += 40
+		}
+		if len(digits) >= 3 {
+			score += 20
+		}
+		score += start / 8 // prefer later tokens on ties
+		candidates = append(candidates, candidate{amount: parsed, score: score, start: start})
+	}
+	if len(candidates) == 0 {
+		return 0, false
+	}
+	best := candidates[0]
+	for _, c := range candidates[1:] {
+		if c.score > best.score || (c.score == best.score && c.start > best.start) {
+			best = c
+		}
+	}
+	return best.amount, true
+}
+
+func onlyDigits(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func extractCounterparty(text, kind string) string {
+	lower := strings.ToLower(text)
+	var marker string
+	if kind == "income" {
+		if idx := strings.Index(lower, "ingreso de "); idx >= 0 {
+			marker = text[idx+11:]
+		} else if idx := strings.LastIndex(lower, " de "); idx >= 0 {
+			marker = text[idx+4:]
+		} else if idx := strings.LastIndex(lower, " por "); idx >= 0 {
+			marker = text[idx+5:]
+		}
+	} else {
+		if idx := strings.Index(lower, " que registr"); strings.HasPrefix(lower, "el ") && idx > 3 {
+			marker = text[3:idx]
+		} else if idx := strings.Index(lower, "gasto de "); idx >= 0 {
+			marker = text[idx+9:]
+		} else if idx := strings.Index(lower, "gasto del "); idx >= 0 {
+			marker = text[idx+10:]
+		} else if idx := strings.LastIndex(lower, " en "); idx >= 0 {
+			marker = text[idx+4:]
+		} else if idx := strings.LastIndex(lower, " para "); idx >= 0 {
+			marker = text[idx+6:]
+		} else if idx := strings.LastIndex(lower, " de "); idx >= 0 {
+			marker = text[idx+4:]
+		}
+	}
+
+	marker = strings.TrimSpace(marker)
+	marker = trimMerchantCandidate(marker)
+	marker = trailingPunctuation.ReplaceAllString(marker, "")
+	marker = strings.Trim(marker, "\"' ")
+	if kind == "income" && containsAny(strings.ToLower(marker), "ingreso", "ingresos", "nomina", "nómina") {
+		marker = "Ingreso manual"
+	}
+	if kind == "expense" && containsAny(strings.ToLower(marker), "gasto", "egreso") {
+		marker = "Gasto manual"
+	}
+	if marker == "" {
+		if kind == "income" {
+			return "Ingreso manual"
+		}
+		return "Gasto manual"
+	}
+	return marker
+}
+
+func hasRegistrationCommand(lowerText string) bool {
+	return containsAny(
+		lowerText,
+		"registra", "registrar", "agrega", "agregar", "anota", "anotar",
+		"guarda", "guardar", "mete", "pon", "actualiza", "actualizalo", "actualízalo",
+		"corrige", "corrígelo", "corrigelo", "registré", "registre",
+	)
+}
+
+func isUpdateIntent(lowerText string) bool {
+	return containsAny(
+		lowerText,
+		"actualiza", "actualíz", "corrige", "corríg", "modifica", "cambia",
+		"en realidad", "ajusta", "ajúst",
+	)
+}
+
+func shouldAttemptAutoRegistration(lowerText string) bool {
+	if hasRegistrationCommand(lowerText) {
+		return true
+	}
+	return containsAny(
+		lowerText,
+		"me gaste", "me gasté", "gaste", "gasté",
+		"me pagaron", "recibi", "recibí", "me cayeron", "me cayó", "me cayo",
+		"ingreso", "gasto", "que registr", "en realidad era de", "en realidad fue de",
+	)
+}
+
+func adjacentToLetter(text string, start, end int) bool {
+	if start > 0 {
+		r, _ := utf8.DecodeLastRuneInString(text[:start])
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	if end < len(text) {
+		r, _ := utf8.DecodeRuneInString(text[end:])
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func trimMerchantCandidate(value string) string {
+	lower := strings.ToLower(value)
+	cut := len(value)
+	for _, needle := range []string{
+		" fueron ", " fue ", " en realidad", " por ", " para ", " con ", ",", ".", ";",
+		" actualiza", " actualíz", " corrige", " corríg",
+	} {
+		if idx := strings.Index(lower, needle); idx >= 0 && idx < cut {
+			cut = idx
+		}
+	}
+	return strings.TrimSpace(value[:cut])
+}
+
+func inferCategory(lowerText, kind, merchant string) string {
+	if kind == "income" {
+		return "income"
+	}
+	lowerMerchant := strings.ToLower(merchant)
+	switch {
+	case containsAny(lowerText, "taco", "comida", "restaurante", "cafe", "cafeter"), containsAny(lowerMerchant, "taco", "comida", "restaurante", "cafe", "cafeter"):
+		return "food"
+	case containsAny(lowerText, "uber", "didi", "gasolina", "transporte"), containsAny(lowerMerchant, "uber", "didi", "gasolina", "transporte"):
+		return "transport"
+	case containsAny(lowerText, "super", "mercado", "walmart", "soriana"), containsAny(lowerMerchant, "super", "mercado", "walmart", "soriana"):
+		return "groceries"
+	default:
+		return "general"
+	}
+}
+
+func shouldSkipRegistration(lowerText string) bool {
+	return containsAny(
+		lowerText,
+		"no lo registres",
+		"no registrar",
+		"sin registrar",
+		"no lo guardes",
+		"no guardar",
+	)
+}
+
+func shouldUndoRegistration(lowerText string) bool {
+	if !containsAny(lowerText, "deshaz", "deshacer", "borra", "elimina", "cancela", "revert") {
+		return false
+	}
+	if containsAny(lowerText, "ultimo", "último", "anterior", "reciente", "última", "ultima") {
+		return true
+	}
+	return containsAny(
+		lowerText,
+		"deshaz eso",
+		"deshazlo",
+		"cancela eso",
+		"revertir eso",
+		"revertirlo",
+	)
+}
+
+func containsAny(text string, terms ...string) bool {
+	for _, term := range terms {
+		if strings.Contains(text, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func jsonObject(value map[string]any) string {
+	out, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(out)
+}
+
+func extractAutoReply(toolContext string) string {
+	const prefix = "AUTO_REPLY:"
+	for _, line := range strings.Split(toolContext, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			reply := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+			if reply != "" {
+				return reply
+			}
+		}
+	}
+	return ""
+}
+
+func formatRegistrationConfirmation(expense *financev1.Expense, kind string) string {
+	if expense == nil || expense.GetAmount() == nil {
+		if kind == "income" {
+			return "Ingreso registrado."
+		}
+		return "Gasto registrado."
+	}
+	amount := expense.GetAmount().GetUnits()
+	currency := firstNonEmpty(expense.GetAmount().GetCurrencyCode(), "MXN")
+	title := firstNonEmpty(expense.GetDisplayTitle(), expense.GetMerchantName())
+	if kind == "income" {
+		return fmt.Sprintf("Ingreso registrado: %s por %d %s.", title, abs64(amount), currency)
+	}
+	return fmt.Sprintf("Gasto registrado: %s por %d %s.", title, abs64(amount), currency)
+}
+
+func abs64(value int64) int64 {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func looksLikeManualInstruction(text string) bool {
+	lower := strings.ToLower(text)
+	return containsAny(
+		lower,
+		"ve a ", "selecciona", "ingresa", "edita", "guarda",
+		"hazlo", "manualmente", "paso", "1.", "2.",
+	)
 }

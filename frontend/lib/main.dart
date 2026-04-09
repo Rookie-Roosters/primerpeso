@@ -1,8 +1,10 @@
 import 'package:flutter/widgets.dart';
 
 import 'app/app.dart';
+import 'core/session/app_session.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const App());
+  final session = await AppSession.bootstrap();
+  runApp(App(session: session));
 }

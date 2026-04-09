@@ -29,14 +29,32 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
+			allowedOrigin := ""
 			if allowAll {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+				// Credentialed browser requests cannot use wildcard origin.
+				if origin != "" {
+					allowedOrigin = origin
+				} else {
+					allowedOrigin = "*"
+				}
 			} else if _, ok := origins[origin]; ok {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
+				allowedOrigin = origin
+			}
+
+			if allowedOrigin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			}
+			if origin != "" {
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+			if allowedOrigin != "*" && origin != "" {
 				w.Header().Add("Vary", "Origin")
 			}
 
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Connect-Protocol-Version, Connect-Timeout-Ms")
+			w.Header().Set(
+				"Access-Control-Allow-Headers",
+				"Authorization, Content-Type, Connect-Protocol-Version, Connect-Timeout-Ms, X-Device-ID, X-User-Agent",
+			)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Expose-Headers", "Grpc-Status, Grpc-Message, Grpc-Status-Details-Bin")
 

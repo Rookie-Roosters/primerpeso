@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shard/shard.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
 import '../../../gen/primerpeso/documents/v1/documents.pb.dart' as documentsv1;
-import '../../auth/shards/auth_shard.dart';
 
 class ReceiptReviewScreen extends StatefulWidget {
   const ReceiptReviewScreen({required this.draft, super.key});
@@ -55,15 +53,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
   }
 
   Future<void> _confirm() async {
-    final accessToken = ShardProvider.of<AuthShard>(
-      context,
-      listen: false,
-    ).state.accessToken;
-    if (accessToken == null || accessToken.isEmpty) {
-      if (mounted) context.go('/chat');
-      return;
-    }
-
+    final ledgerRefresh = AppScope.ledgerRefreshOf(context);
     final amountUnits = int.tryParse(_amountController.text.trim());
     if (amountUnits == null) {
       setState(() => _errorMessage = 'El monto debe ser un número entero.');
@@ -78,13 +68,13 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
     try {
       final response = await AppScope.of(context).financeRepository
           .confirmExpense(
-            accessToken: accessToken,
             draft: widget.draft,
             merchantName: _merchantController.text.trim(),
             displayTitle: _titleController.text.trim(),
             category: _categoryController.text.trim(),
             amountUnits: amountUnits,
           );
+      ledgerRefresh.markChanged();
       if (!mounted) return;
       await showDialog<void>(
         context: context,

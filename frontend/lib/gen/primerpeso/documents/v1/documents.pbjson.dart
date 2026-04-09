@@ -37,6 +37,22 @@ final $typed_data.Uint8List receiptStatusDescriptor = $convert.base64Decode(
     'lQVF9TVEFUVVNfUFJPQ0VTU0lORxABEhgKFFJFQ0VJUFRfU1RBVFVTX1JFQURZEAISGQoVUkVD'
     'RUlQVF9TVEFUVVNfRkFJTEVEEAM=');
 
+@$core.Deprecated('Use extractionDecisionDescriptor instead')
+const ExtractionDecision$json = {
+  '1': 'ExtractionDecision',
+  '2': [
+    {'1': 'EXTRACTION_DECISION_UNSPECIFIED', '2': 0},
+    {'1': 'EXTRACTION_DECISION_AUTO_REGISTER', '2': 1},
+    {'1': 'EXTRACTION_DECISION_NEEDS_CLARIFICATION', '2': 2},
+  ],
+};
+
+/// Descriptor for `ExtractionDecision`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List extractionDecisionDescriptor = $convert.base64Decode(
+    'ChJFeHRyYWN0aW9uRGVjaXNpb24SIwofRVhUUkFDVElPTl9ERUNJU0lPTl9VTlNQRUNJRklFRB'
+    'AAEiUKIUVYVFJBQ1RJT05fREVDSVNJT05fQVVUT19SRUdJU1RFUhABEisKJ0VYVFJBQ1RJT05f'
+    'REVDSVNJT05fTkVFRFNfQ0xBUklGSUNBVElPThAC');
+
 @$core.Deprecated('Use receiptLineItemDescriptor instead')
 const ReceiptLineItem$json = {
   '1': 'ReceiptLineItem',
@@ -156,13 +172,46 @@ const UploadReceiptResponse$json = {
       '6': '.primerpeso.documents.v1.ReceiptDraft',
       '10': 'draft'
     },
+    {
+      '1': 'decision',
+      '3': 2,
+      '4': 1,
+      '5': 14,
+      '6': '.primerpeso.documents.v1.ExtractionDecision',
+      '10': 'decision'
+    },
+    {'1': 'missing_fields', '3': 3, '4': 3, '5': 9, '10': 'missingFields'},
+    {'1': 'rationale', '3': 4, '4': 1, '5': 9, '10': 'rationale'},
+    {'1': 'confidence', '3': 5, '4': 1, '5': 1, '10': 'confidence'},
+    {
+      '1': 'expense',
+      '3': 6,
+      '4': 1,
+      '5': 11,
+      '6': '.primerpeso.finance.v1.Expense',
+      '10': 'expense'
+    },
+    {
+      '1': 'score_summary',
+      '3': 7,
+      '4': 1,
+      '5': 11,
+      '6': '.primerpeso.finance.v1.ScoreSummary',
+      '10': 'scoreSummary'
+    },
   ],
 };
 
 /// Descriptor for `UploadReceiptResponse`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List uploadReceiptResponseDescriptor = $convert.base64Decode(
     'ChVVcGxvYWRSZWNlaXB0UmVzcG9uc2USOwoFZHJhZnQYASABKAsyJS5wcmltZXJwZXNvLmRvY3'
-    'VtZW50cy52MS5SZWNlaXB0RHJhZnRSBWRyYWZ0');
+    'VtZW50cy52MS5SZWNlaXB0RHJhZnRSBWRyYWZ0EkcKCGRlY2lzaW9uGAIgASgOMisucHJpbWVy'
+    'cGVzby5kb2N1bWVudHMudjEuRXh0cmFjdGlvbkRlY2lzaW9uUghkZWNpc2lvbhIlCg5taXNzaW'
+    '5nX2ZpZWxkcxgDIAMoCVINbWlzc2luZ0ZpZWxkcxIcCglyYXRpb25hbGUYBCABKAlSCXJhdGlv'
+    'bmFsZRIeCgpjb25maWRlbmNlGAUgASgBUgpjb25maWRlbmNlEjgKB2V4cGVuc2UYBiABKAsyHi'
+    '5wcmltZXJwZXNvLmZpbmFuY2UudjEuRXhwZW5zZVIHZXhwZW5zZRJICg1zY29yZV9zdW1tYXJ5'
+    'GAcgASgLMiMucHJpbWVycGVzby5maW5hbmNlLnYxLlNjb3JlU3VtbWFyeVIMc2NvcmVTdW1tYX'
+    'J5');
 
 @$core.Deprecated('Use getReceiptDraftRequestDescriptor instead')
 const GetReceiptDraftRequest$json = {
@@ -264,6 +313,9 @@ const $core.Map<$core.String, $core.Map<$core.String, $core.dynamic>>
   '.primerpeso.documents.v1.ReceiptLineItem': ReceiptLineItem$json,
   '.primerpeso.finance.v1.Money': $0.Money$json,
   '.google.protobuf.Timestamp': $1.Timestamp$json,
+  '.primerpeso.finance.v1.Expense': $0.Expense$json,
+  '.primerpeso.finance.v1.ScoreSummary': $0.ScoreSummary$json,
+  '.primerpeso.finance.v1.ScoreFactor': $0.ScoreFactor$json,
   '.primerpeso.documents.v1.GetReceiptDraftRequest':
       GetReceiptDraftRequest$json,
   '.primerpeso.documents.v1.GetReceiptDraftResponse':

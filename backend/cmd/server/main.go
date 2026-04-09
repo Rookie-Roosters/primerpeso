@@ -82,6 +82,7 @@ func main() {
 	identityService := identity.NewService(cfg, logger, identityModule, identitystore.New(pool), cryptoService)
 	documentsService := documents.NewService(logger, documentsstore.New(pool), cryptoService, blobStore, documents.NewExtractor(cfg))
 	financeService := finance.NewService(logger, financestore.New(pool), cryptoService, documentsService)
+	documentsService.SetExpenseRegistrar(financeService)
 	agentService := agent.NewService(ctx, cfg, logger, financeService, documentsService)
 
 	router := chi.NewRouter()
@@ -139,15 +140,15 @@ func main() {
 
 func publicConnectPaths() map[string]struct{} {
 	return map[string]struct{}{
-		identityv1connect.IdentityServiceRegisterProcedure:               {},
-		identityv1connect.IdentityServiceLoginProcedure:                  {},
-		identityv1connect.IdentityServiceRefreshProcedure:                {},
-		identityv1connect.IdentityServiceLogoutProcedure:                 {},
-		identityv1connect.IdentityServiceBeginGoogleAuthProcedure:        {},
-		identityv1connect.IdentityServiceExchangeGoogleAuthCodeProcedure: {},
-		identityv1connect.IdentityServiceVerifyEmailProcedure:            {},
+		identityv1connect.IdentityServiceRegisterProcedure:                {},
+		identityv1connect.IdentityServiceLoginProcedure:                   {},
+		identityv1connect.IdentityServiceRefreshProcedure:                 {},
+		identityv1connect.IdentityServiceLogoutProcedure:                  {},
+		identityv1connect.IdentityServiceBeginGoogleAuthProcedure:         {},
+		identityv1connect.IdentityServiceExchangeGoogleAuthCodeProcedure:  {},
+		identityv1connect.IdentityServiceVerifyEmailProcedure:             {},
 		identityv1connect.IdentityServiceResendVerificationEmailProcedure: {},
-		identityv1connect.IdentityServiceRequestPasswordResetProcedure:   {},
-		identityv1connect.IdentityServiceResetPasswordProcedure:          {},
+		identityv1connect.IdentityServiceRequestPasswordResetProcedure:    {},
+		identityv1connect.IdentityServiceResetPasswordProcedure:           {},
 	}
 }

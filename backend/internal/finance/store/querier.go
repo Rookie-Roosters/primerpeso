@@ -13,10 +13,14 @@ type Querier interface {
 	CountExpenses(ctx context.Context, userID string) (int64, error)
 	CreateExpense(ctx context.Context, arg CreateExpenseParams) (Expense, error)
 	CreateScoreSnapshot(ctx context.Context, arg CreateScoreSnapshotParams) (ScoreSnapshot, error)
+	DeleteExpenseByID(ctx context.Context, arg DeleteExpenseByIDParams) (Expense, error)
+	DeleteLatestExpense(ctx context.Context, userID string) (Expense, error)
 	GetLatestScoreSnapshot(ctx context.Context, userID string) (ScoreSnapshot, error)
 	ListExpenses(ctx context.Context, arg ListExpensesParams) ([]Expense, error)
 	SumLatestMonthExpenseUnits(ctx context.Context, userID string) (int64, error)
 	SumTopCategoryExpenseUnits(ctx context.Context, userID string) (int64, error)
+	UpdateExpenseByID(ctx context.Context, arg UpdateExpenseByIDParams) (Expense, error)
+	UpdateLatestExpenseByMerchant(ctx context.Context, arg UpdateLatestExpenseByMerchantParams) (Expense, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:mix/mix.dart';
 
 import '../../../../core/theme/green_tokens.dart';
@@ -102,24 +103,13 @@ class ChatBubble extends StatelessWidget {
                         ),
                       ),
                     ),
-                  Text(
-                    message.content.isEmpty && !isSystem
+                  _MessageContent(
+                    content: message.content.isEmpty && !isSystem
                         ? '…'
                         : message.content,
-                    textAlign: isUser ? TextAlign.right : TextAlign.left,
-                    softWrap: true,
-                    locale: const Locale('es'),
-                    strutStyle: const StrutStyle(
-                      fontSize: 15,
-                      height: 1.45,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
-                    style: TextStyle(
-                      color: textColor,
-                      fontSize: 15,
-                      height: 1.45,
-                      fontWeight: FontWeight.w400,
-                    ),
+                    role: message.role,
+                    textColor: textColor,
+                    alignRight: isUser,
                   ),
                 ],
               ),
@@ -127,6 +117,62 @@ class ChatBubble extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _MessageContent extends StatelessWidget {
+  const _MessageContent({
+    required this.content,
+    required this.role,
+    required this.textColor,
+    required this.alignRight,
+  });
+
+  final String content;
+  final ChatRole role;
+  final Color textColor;
+  final bool alignRight;
+
+  @override
+  Widget build(BuildContext context) {
+    final useMarkdown = role == ChatRole.assistant || role == ChatRole.system;
+    if (!useMarkdown) {
+      return Text(
+        content,
+        textAlign: alignRight ? TextAlign.right : TextAlign.left,
+        softWrap: true,
+        locale: const Locale('es'),
+        strutStyle: const StrutStyle(
+          fontSize: 15,
+          height: 1.45,
+          leadingDistribution: TextLeadingDistribution.even,
+        ),
+        style: TextStyle(
+          color: textColor,
+          fontSize: 15,
+          height: 1.45,
+          fontWeight: FontWeight.w400,
+        ),
+      );
+    }
+
+    final base = TextStyle(
+      color: textColor,
+      fontSize: 15,
+      height: 1.45,
+      fontWeight: FontWeight.w400,
+    );
+    return MarkdownBody(
+      data: content,
+      selectable: false,
+      styleSheet: MarkdownStyleSheet(
+        p: base,
+        listBullet: base,
+        strong: base.copyWith(fontWeight: FontWeight.w700),
+        em: base.copyWith(fontStyle: FontStyle.italic),
+      ),
+      softLineBreak: true,
     );
   }
 }

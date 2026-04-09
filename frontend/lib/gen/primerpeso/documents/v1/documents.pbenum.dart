@@ -39,5 +39,30 @@ class ReceiptStatus extends $pb.ProtobufEnum {
   const ReceiptStatus._(super.value, super.name);
 }
 
+class ExtractionDecision extends $pb.ProtobufEnum {
+  static const ExtractionDecision EXTRACTION_DECISION_UNSPECIFIED =
+      ExtractionDecision._(
+          0, _omitEnumNames ? '' : 'EXTRACTION_DECISION_UNSPECIFIED');
+  static const ExtractionDecision EXTRACTION_DECISION_AUTO_REGISTER =
+      ExtractionDecision._(
+          1, _omitEnumNames ? '' : 'EXTRACTION_DECISION_AUTO_REGISTER');
+  static const ExtractionDecision EXTRACTION_DECISION_NEEDS_CLARIFICATION =
+      ExtractionDecision._(
+          2, _omitEnumNames ? '' : 'EXTRACTION_DECISION_NEEDS_CLARIFICATION');
+
+  static const $core.List<ExtractionDecision> values = <ExtractionDecision>[
+    EXTRACTION_DECISION_UNSPECIFIED,
+    EXTRACTION_DECISION_AUTO_REGISTER,
+    EXTRACTION_DECISION_NEEDS_CLARIFICATION,
+  ];
+
+  static final $core.List<ExtractionDecision?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 2);
+  static ExtractionDecision? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const ExtractionDecision._(super.value, super.name);
+}
+
 const $core.bool _omitEnumNames =
     $core.bool.fromEnvironment('protobuf.omit_enum_names');

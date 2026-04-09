@@ -1,14 +1,19 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shard/shard.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/app_scope.dart';
+import '../../../core/formatting/money_format.dart';
 import '../../../core/theme/green_tokens.dart';
-import '../../auth/shards/auth_shard.dart';
+import '../../../gen/primerpeso/documents/v1/documents.pb.dart' as documentsv1;
+import '../../../gen/primerpeso/finance/v1/finance.pb.dart' as financev1;
 
-// ── Placeholder data models ─────────────────────────────────────────────────
+// ── Category model (live data only) ─────────────────────────────────────────
 
 class _Category {
   const _Category({
@@ -28,79 +33,9 @@ class _Category {
   final Color accentColor;
 }
 
-class _Account {
-  const _Account({
-    required this.name,
-    required this.balance,
-    required this.icon,
-    required this.tint,
-  });
-
-  final String name;
-  final String balance;
-  final IconData icon;
-  final Color tint;
-}
-
-const _categories = [
-  _Category(
-    name: 'Renta',
-    percent: 38,
-    amount: r'$5,700',
-    icon: FIcons.house,
-    bgColor: Color(0xFFE7F5EC),
-    accentColor: Color(0xFF2FA366),
-  ),
-  _Category(
-    name: 'Comida',
-    percent: 27,
-    amount: r'$4,050',
-    icon: FIcons.shoppingCart,
-    bgColor: Color(0xFFFFF3E0),
-    accentColor: Color(0xFFE67E22),
-  ),
-  _Category(
-    name: 'Transporte',
-    percent: 18,
-    amount: r'$2,700',
-    icon: FIcons.car,
-    bgColor: Color(0xFFE3F2FD),
-    accentColor: Color(0xFF1E88E5),
-  ),
-  _Category(
-    name: 'Otro',
-    percent: 17,
-    amount: r'$2,550',
-    icon: FIcons.ellipsis,
-    bgColor: Color(0xFFFCE4EC),
-    accentColor: Color(0xFFE91E63),
-  ),
-];
-
-const _accounts = [
-  _Account(
-    name: 'Efectivo',
-    balance: r'$3,200',
-    icon: FIcons.banknote,
-    tint: Color(0xFFE7F5EC),
-  ),
-  _Account(
-    name: 'BBVA Débito',
-    balance: r'$8,500',
-    icon: FIcons.creditCard,
-    tint: Color(0xFFE3F2FD),
-  ),
-  _Account(
-    name: 'Nómina',
-    balance: r'$3,300',
-    icon: FIcons.wallet,
-    tint: Color(0xFFFFF3E0),
-  ),
-];
-
 // ── Screen ──────────────────────────────────────────────────────────────────
 
-/// Cash management home — monthly summary, categories and accounts.
+/// Cash management home — monthly summary, categories, and planning slots.
 class TrackerScreen extends StatefulWidget {
   const TrackerScreen({super.key});
 
@@ -114,18 +49,25 @@ class _TrackerScreenState extends State<TrackerScreen> {
   bool _isUploading = false;
   String? _uploadError;
 
+  late DateTime _visibleMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final n = DateTime.now();
+    _visibleMonth = DateTime(n.year, n.month);
+  }
+
+  void _shiftMonth(int delta) {
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + delta);
+    });
+  }
+
   Future<void> _startUpload() async {
-    final authState = ShardProvider.of<AuthShard>(context, listen: false).state;
-    final accessToken = authState.accessToken;
-    if (accessToken == null || accessToken.isEmpty) {
-      if (mounted) {
-        context.go('/chat');
-      }
-      return;
-    }
     final receiptRepository = AppScope.of(context).receiptRepository;
 
-    final source = await showModalBottomSheet<ImageSource>(
+    final source = await showModalBottomSheet<_TrackerAttachmentSource>(
       context: context,
       backgroundColor: surface,
       shape: const RoundedRectangleBorder(
@@ -137,12 +79,20 @@ class _TrackerScreenState extends State<TrackerScreen> {
             ListTile(
               leading: const Icon(FIcons.camera),
               title: const Text('Tomar foto'),
-              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+              onTap: () =>
+                  Navigator.of(context).pop(_TrackerAttachmentSource.camera),
             ),
             ListTile(
               leading: const Icon(FIcons.image),
               title: const Text('Elegir de galería'),
-              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+              onTap: () =>
+                  Navigator.of(context).pop(_TrackerAttachmentSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(FIcons.file),
+              title: const Text('Subir PDF'),
+              onTap: () =>
+                  Navigator.of(context).pop(_TrackerAttachmentSource.pdf),
             ),
           ],
         ),
@@ -156,23 +106,41 @@ class _TrackerScreenState extends State<TrackerScreen> {
     });
 
     try {
-      final image = await _picker.pickImage(source: source, imageQuality: 92);
-      if (image == null) {
+      final payload = await _pickPayload(source);
+      if (payload == null) {
         if (mounted) {
           setState(() => _isUploading = false);
         }
         return;
       }
 
-      final bytes = await image.readAsBytes();
-      final draft = await receiptRepository.uploadReceipt(
-        accessToken: accessToken,
-        content: bytes,
-        filename: image.name,
-        mimeType: _mimeTypeForPath(image.path),
+      final response = await receiptRepository.uploadReceipt(
+        content: payload.bytes,
+        filename: payload.filename,
+        mimeType: payload.mimeType,
       );
       if (!mounted) return;
-      await context.push('/receipt-review', extra: draft);
+      if (_needsClarification(response)) {
+        await context.push('/receipt-review', extra: response.draft);
+      } else {
+        AppScope.ledgerRefreshOf(context).markChanged();
+        final draft = response.draft;
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Gasto registrado'),
+            content: Text(
+              '${draft.merchantName} por ${formatMxMoneyInt64(draft.total.units)} ${draft.total.currencyCode}.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cerrar'),
+              ),
+            ],
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _uploadError = error.toString());
@@ -181,6 +149,40 @@ class _TrackerScreenState extends State<TrackerScreen> {
         setState(() => _isUploading = false);
       }
     }
+  }
+
+  Future<_TrackerPayload?> _pickPayload(_TrackerAttachmentSource source) async {
+    if (source == _TrackerAttachmentSource.pdf) {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+        withData: true,
+      );
+      if (result == null ||
+          result.files.isEmpty ||
+          result.files.first.bytes == null) {
+        return null;
+      }
+      return _TrackerPayload(
+        bytes: result.files.first.bytes!,
+        filename: result.files.first.name,
+        mimeType: 'application/pdf',
+      );
+    }
+
+    final image = await _picker.pickImage(
+      source: source == _TrackerAttachmentSource.camera
+          ? ImageSource.camera
+          : ImageSource.gallery,
+      imageQuality: 92,
+    );
+    if (image == null) return null;
+    final bytes = await image.readAsBytes();
+    return _TrackerPayload(
+      bytes: bytes,
+      filename: image.name,
+      mimeType: _mimeTypeForPath(image.path),
+    );
   }
 
   @override
@@ -193,27 +195,84 @@ class _TrackerScreenState extends State<TrackerScreen> {
           children: [
             _Header(onHistoryTap: () => context.push('/history')),
             const SizedBox(height: 16),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: _MonthSelector(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _MonthSelector(
+                visibleMonth: _visibleMonth,
+                onPrevious: () => _shiftMonth(-1),
+                onNext: () => _shiftMonth(1),
+              ),
             ),
             const SizedBox(height: 16),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: _SummaryCard(),
+            AnimatedBuilder(
+              animation: AppScope.ledgerRefreshOf(context),
+              builder: (context, _) {
+                return FutureBuilder<List<financev1.Expense>>(
+                  key: ValueKey(AppScope.ledgerRefreshOf(context).revision),
+                  future: AppScope.of(context).financeRepository.listExpenses(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: FAlert(
+                          variant: FAlertVariant.destructive,
+                          title: const Text('No pude cargar movimientos'),
+                          subtitle: Text(snapshot.error.toString()),
+                        ),
+                      );
+                    }
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: CircularProgressIndicator(color: primaryGreen),
+                        ),
+                      );
+                    }
+                    final all = snapshot.data ?? const <financev1.Expense>[];
+                    final filtered = _expensesInMonth(all, _visibleMonth);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: _LiveSummaryCard(expenses: filtered),
+                        ),
+                        const SizedBox(height: 28),
+                        const _SectionHeader(title: 'Gastos por categoría'),
+                        const SizedBox(height: 12),
+                        _LiveCategoriesRow(expenses: filtered),
+                        const SizedBox(height: 28),
+                        const _SectionHeader(title: 'Apartados'),
+                        const SizedBox(height: 12),
+                        const _EmptyFeatureBlock(
+                          message:
+                              'Aquí podrás ver y administrar tus apartados cuando la función esté disponible.',
+                        ),
+                        const SizedBox(height: 28),
+                        const _SectionHeader(title: 'Metas financieras'),
+                        const SizedBox(height: 12),
+                        const _EmptyFeatureBlock(
+                          message:
+                              'Podrás definir metas y seguir tu avance cuando activemos esta sección.',
+                        ),
+                        const SizedBox(height: 28),
+                        const _SectionHeader(
+                          title: 'Recordatorios y pagos recurrentes',
+                        ),
+                        const SizedBox(height: 12),
+                        const _EmptyFeatureBlock(
+                          message:
+                              'Te avisaremos de pagos recurrentes y recordatorios cuando esté listo.',
+                        ),
+                        const SizedBox(height: 28),
+                      ],
+                    );
+                  },
+                );
+              },
             ),
-            const SizedBox(height: 28),
-            const _SectionHeader(
-              title: 'Gastos por categoría',
-              action: 'Ver todos',
-            ),
-            const SizedBox(height: 12),
-            const _CategoriesRow(),
-            const SizedBox(height: 28),
-            const _SectionHeader(title: 'Cuentas', action: 'Agregar'),
-            const SizedBox(height: 12),
-            const _AccountsRow(),
-            const SizedBox(height: 28),
             if (_uploadError != null) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -306,10 +365,19 @@ class _Header extends StatelessWidget {
 // ── Month selector ────────────────────────────────────────────────────────────
 
 class _MonthSelector extends StatelessWidget {
-  const _MonthSelector();
+  const _MonthSelector({
+    required this.visibleMonth,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final DateTime visibleMonth;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
+    final label = DateFormat.yMMMM('es_MX').format(visibleMonth);
     return Align(
       alignment: Alignment.centerLeft,
       child: DecoratedBox(
@@ -318,22 +386,41 @@ class _MonthSelector extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: borderSubtle),
         ),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Abril 2026',
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.2,
+              IconButton(
+                onPressed: onPrevious,
+                icon: const Icon(FIcons.chevronLeft, size: 18, color: inkMuted),
+                style: IconButton.styleFrom(
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
-              SizedBox(width: 6),
-              Icon(FIcons.chevronDown, size: 14, color: inkMuted),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: onNext,
+                icon: const Icon(FIcons.chevronRight, size: 18, color: inkMuted),
+                style: IconButton.styleFrom(
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
             ],
           ),
         ),
@@ -344,11 +431,14 @@ class _MonthSelector extends StatelessWidget {
 
 // ── Summary card ──────────────────────────────────────────────────────────────
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard();
+class _LiveSummaryCard extends StatelessWidget {
+  const _LiveSummaryCard({required this.expenses});
+
+  final List<financev1.Expense> expenses;
 
   @override
   Widget build(BuildContext context) {
+    final stats = _summaryFromExpenses(expenses);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: surface,
@@ -365,14 +455,13 @@ class _SummaryCard extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Income / Expense row
             Row(
               children: [
                 Expanded(
                   child: _FlowTile(
                     label: 'Gastos',
-                    amount: r'-$15,000',
-                    sub: '8 movimientos',
+                    amount: formatSignedMxMoney(-stats.totalExpenseUnits),
+                    sub: '${stats.expenseCount} movimientos',
                     isExpense: true,
                   ),
                 ),
@@ -385,8 +474,10 @@ class _SummaryCard extends StatelessWidget {
                 Expanded(
                   child: _FlowTile(
                     label: 'Ingresos',
-                    amount: r'$18,000',
-                    sub: '1 movimiento',
+                    amount: formatMxMoney(stats.totalIncomeUnits),
+                    sub: stats.incomeCount == 0
+                        ? 'Sin ingresos'
+                        : '${stats.incomeCount} movimientos',
                     isExpense: false,
                   ),
                 ),
@@ -414,29 +505,14 @@ class _SummaryCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      r'$3,000',
-                      style: TextStyle(
+                    Text(
+                      formatSignedMxMoney(stats.netBalanceUnits),
+                      style: const TextStyle(
                         color: ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.3,
                       ),
-                    ),
-                    const Spacer(),
-                    const Text(
-                      'Ver más',
-                      style: TextStyle(
-                        color: primaryGreen,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    const Icon(
-                      FIcons.chevronRight,
-                      size: 14,
-                      color: primaryGreen,
                     ),
                   ],
                 ),
@@ -511,10 +587,9 @@ class _FlowTile extends StatelessWidget {
 // ── Section header ────────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title, required this.action});
+  const _SectionHeader({required this.title});
 
   final String title;
-  final String action;
 
   @override
   Widget build(BuildContext context) {
@@ -531,16 +606,41 @@ class _SectionHeader extends StatelessWidget {
               letterSpacing: -0.3,
             ),
           ),
-          const Spacer(),
-          Text(
-            action,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Empty feature blocks ──────────────────────────────────────────────────────
+
+class _EmptyFeatureBlock extends StatelessWidget {
+  const _EmptyFeatureBlock({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderSubtle),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Text(
+            message,
             style: const TextStyle(
-              color: primaryGreen,
+              color: inkMuted,
               fontSize: 13,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
+              height: 1.35,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -548,19 +648,38 @@ class _SectionHeader extends StatelessWidget {
 
 // ── Categories row ────────────────────────────────────────────────────────────
 
-class _CategoriesRow extends StatelessWidget {
-  const _CategoriesRow();
+class _LiveCategoriesRow extends StatelessWidget {
+  const _LiveCategoriesRow({required this.expenses});
+
+  final List<financev1.Expense> expenses;
 
   @override
   Widget build(BuildContext context) {
+    final categories = _categoriesFromExpenses(expenses);
+    if (categories.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 24),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Sin gastos por categoría en este mes.',
+            style: TextStyle(
+              color: inkMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      );
+    }
     return SizedBox(
       height: 90,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        itemCount: _categories.length,
+        itemCount: categories.length,
         separatorBuilder: (context, i) => const SizedBox(width: 10),
-        itemBuilder: (_, i) => _CategoryCard(category: _categories[i]),
+        itemBuilder: (_, i) => _CategoryCard(category: categories[i]),
       ),
     );
   }
@@ -615,84 +734,6 @@ class _CategoryCard extends StatelessWidget {
                 style: const TextStyle(
                   color: ink,
                   fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Accounts row ──────────────────────────────────────────────────────────────
-
-class _AccountsRow extends StatelessWidget {
-  const _AccountsRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 96,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        itemCount: _accounts.length,
-        separatorBuilder: (context, i) => const SizedBox(width: 10),
-        itemBuilder: (_, i) => _AccountCard(account: _accounts[i]),
-      ),
-    );
-  }
-}
-
-class _AccountCard extends StatelessWidget {
-  const _AccountCard({required this.account});
-
-  final _Account account;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderSubtle),
-      ),
-      child: SizedBox(
-        width: 120,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: account.tint,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Icon(account.icon, size: 16, color: primaryGreen),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                account.name,
-                style: const TextStyle(
-                  color: inkMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                account.balance,
-                style: const TextStyle(
-                  color: ink,
-                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
                 ),
@@ -773,4 +814,157 @@ String _mimeTypeForPath(String path) {
     return 'image/webp';
   }
   return 'image/jpeg';
+}
+
+bool _needsClarification(documentsv1.UploadReceiptResponse response) {
+  return response.decision ==
+      documentsv1.ExtractionDecision.EXTRACTION_DECISION_NEEDS_CLARIFICATION;
+}
+
+enum _TrackerAttachmentSource { camera, gallery, pdf }
+
+class _TrackerPayload {
+  const _TrackerPayload({
+    required this.bytes,
+    required this.filename,
+    required this.mimeType,
+  });
+
+  final Uint8List bytes;
+  final String filename;
+  final String mimeType;
+}
+
+class _SummaryStats {
+  const _SummaryStats({
+    required this.totalExpenseUnits,
+    required this.totalIncomeUnits,
+    required this.expenseCount,
+    required this.incomeCount,
+    required this.netBalanceUnits,
+  });
+
+  final int totalExpenseUnits;
+  final int totalIncomeUnits;
+  final int expenseCount;
+  final int incomeCount;
+  final int netBalanceUnits;
+}
+
+List<financev1.Expense> _expensesInMonth(
+  List<financev1.Expense> all,
+  DateTime yearMonth,
+) {
+  return all.where((e) {
+    if (!e.hasOccurredAt()) return false;
+    final d = e.occurredAt.toDateTime().toLocal();
+    return d.year == yearMonth.year && d.month == yearMonth.month;
+  }).toList();
+}
+
+_SummaryStats _summaryFromExpenses(List<financev1.Expense> expenses) {
+  var expenseTotal = 0;
+  var incomeTotal = 0;
+  var expenseCount = 0;
+  var incomeCount = 0;
+  for (final expense in expenses) {
+    final units = expense.amount.units.toInt();
+    if (units < 0) {
+      incomeTotal += units.abs();
+      incomeCount += 1;
+      continue;
+    }
+    expenseTotal += units;
+    expenseCount += 1;
+  }
+  return _SummaryStats(
+    totalExpenseUnits: expenseTotal,
+    totalIncomeUnits: incomeTotal,
+    expenseCount: expenseCount,
+    incomeCount: incomeCount,
+    netBalanceUnits: incomeTotal - expenseTotal,
+  );
+}
+
+List<_Category> _categoriesFromExpenses(List<financev1.Expense> expenses) {
+  if (expenses.isEmpty) return const [];
+
+  final totals = <String, int>{};
+  var globalTotal = 0;
+  for (final expense in expenses) {
+    final units = expense.amount.units.toInt();
+    if (units <= 0) continue;
+    final key = expense.category.isEmpty ? 'general' : expense.category;
+    totals[key] = (totals[key] ?? 0) + units;
+    globalTotal += units;
+  }
+  if (totals.isEmpty) return const [];
+
+  final sorted = totals.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+
+  return sorted.take(4).map((entry) {
+    final amount = entry.value;
+    final percent = globalTotal <= 0
+        ? 0
+        : ((amount / globalTotal) * 100).round();
+    return _Category(
+      name: _titleCase(entry.key),
+      percent: percent,
+      amount: formatMxMoney(amount),
+      icon: _categoryIcon(entry.key),
+      bgColor: _categoryBackground(entry.key),
+      accentColor: _categoryAccent(entry.key),
+    );
+  }).toList();
+}
+
+String _titleCase(String value) {
+  if (value.isEmpty) return value;
+  return value[0].toUpperCase() + value.substring(1).toLowerCase();
+}
+
+IconData _categoryIcon(String key) {
+  switch (key) {
+    case 'food':
+      return FIcons.utensils;
+    case 'transport':
+      return FIcons.car;
+    case 'groceries':
+      return FIcons.shoppingCart;
+    case 'entertainment':
+      return FIcons.popcorn;
+    default:
+      return FIcons.receipt;
+  }
+}
+
+Color _categoryBackground(String key) {
+  switch (key) {
+    case 'food':
+      return const Color(0xFFFFF3E0);
+    case 'transport':
+      return const Color(0xFFE3F2FD);
+    case 'groceries':
+      return const Color(0xFFE7F5EC);
+    case 'entertainment':
+      return const Color(0xFFF3E5F5);
+    default:
+      return const Color(0xFFFCE4EC);
+  }
+}
+
+Color _categoryAccent(String key) {
+  switch (key) {
+    case 'food':
+      return const Color(0xFFE67E22);
+    case 'transport':
+      return const Color(0xFF1E88E5);
+    case 'groceries':
+      return const Color(0xFF2FA366);
+    case 'entertainment':
+      return const Color(0xFF8E24AA);
+    default:
+      return const Color(0xFFE91E63);
+  }
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -16,6 +17,7 @@ const countCategoryCoverage = `-- name: CountCategoryCoverage :one
 SELECT COUNT(DISTINCT category)::bigint
 FROM expenses
 WHERE user_id = $1
+  AND amount_units > 0
 `
 
 func (q *Queries) CountCategoryCoverage(ctx context.Context, userID string) (int64, error) {
@@ -29,6 +31,7 @@ const countExpenses = `-- name: CountExpenses :one
 SELECT COUNT(*)::bigint
 FROM expenses
 WHERE user_id = $1
+  AND amount_units > 0
 `
 
 func (q *Queries) CountExpenses(ctx context.Context, userID string) (int64, error) {
@@ -51,6 +54,16 @@ INSERT INTO expenses (
     amount_nanos,
     occurred_at
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (user_id, receipt_id) WHERE receipt_id IS NOT NULL
+DO UPDATE SET
+    encrypted_merchant_name = EXCLUDED.encrypted_merchant_name,
+    merchant_hash = EXCLUDED.merchant_hash,
+    encrypted_display_title = EXCLUDED.encrypted_display_title,
+    category = EXCLUDED.category,
+    currency_code = EXCLUDED.currency_code,
+    amount_units = EXCLUDED.amount_units,
+    amount_nanos = EXCLUDED.amount_nanos,
+    occurred_at = EXCLUDED.occurred_at
 RETURNING id, user_id, receipt_id, encrypted_merchant_name, merchant_hash, encrypted_display_title, category, currency_code, amount_units, amount_nanos, occurred_at, created_at
 `
 
@@ -118,6 +131,70 @@ func (q *Queries) CreateScoreSnapshot(ctx context.Context, arg CreateScoreSnapsh
 		&i.UserID,
 		&i.Score,
 		&i.Factors,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteExpenseByID = `-- name: DeleteExpenseByID :one
+DELETE FROM expenses AS e
+WHERE e.user_id = $1
+  AND e.id = $2
+RETURNING e.id, e.user_id, e.receipt_id, e.encrypted_merchant_name, e.merchant_hash, e.encrypted_display_title, e.category, e.currency_code, e.amount_units, e.amount_nanos, e.occurred_at, e.created_at
+`
+
+type DeleteExpenseByIDParams struct {
+	UserID string    `json:"user_id"`
+	ID     uuid.UUID `json:"id"`
+}
+
+func (q *Queries) DeleteExpenseByID(ctx context.Context, arg DeleteExpenseByIDParams) (Expense, error) {
+	row := q.db.QueryRow(ctx, deleteExpenseByID, arg.UserID, arg.ID)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.EncryptedMerchantName,
+		&i.MerchantHash,
+		&i.EncryptedDisplayTitle,
+		&i.Category,
+		&i.CurrencyCode,
+		&i.AmountUnits,
+		&i.AmountNanos,
+		&i.OccurredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteLatestExpense = `-- name: DeleteLatestExpense :one
+DELETE FROM expenses AS e
+WHERE e.id = (
+    SELECT e2.id
+    FROM expenses AS e2
+    WHERE e2.user_id = $1
+    ORDER BY e2.created_at DESC
+    LIMIT 1
+)
+RETURNING e.id, e.user_id, e.receipt_id, e.encrypted_merchant_name, e.merchant_hash, e.encrypted_display_title, e.category, e.currency_code, e.amount_units, e.amount_nanos, e.occurred_at, e.created_at
+`
+
+func (q *Queries) DeleteLatestExpense(ctx context.Context, userID string) (Expense, error) {
+	row := q.db.QueryRow(ctx, deleteLatestExpense, userID)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.EncryptedMerchantName,
+		&i.MerchantHash,
+		&i.EncryptedDisplayTitle,
+		&i.Category,
+		&i.CurrencyCode,
+		&i.AmountUnits,
+		&i.AmountNanos,
+		&i.OccurredAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -194,6 +271,7 @@ const sumLatestMonthExpenseUnits = `-- name: SumLatestMonthExpenseUnits :one
 SELECT COALESCE(SUM(amount_units), 0)::bigint
 FROM expenses
 WHERE user_id = $1
+  AND amount_units > 0
   AND occurred_at >= NOW() - INTERVAL '30 days'
 `
 
@@ -210,6 +288,7 @@ FROM (
     SELECT SUM(amount_units)::bigint AS category_total
     FROM expenses
     WHERE user_id = $1
+      AND amount_units > 0
       AND occurred_at >= NOW() - INTERVAL '30 days'
     GROUP BY category
 ) ranked
@@ -220,4 +299,128 @@ func (q *Queries) SumTopCategoryExpenseUnits(ctx context.Context, userID string)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const updateExpenseByID = `-- name: UpdateExpenseByID :one
+UPDATE expenses AS e
+SET
+    encrypted_merchant_name = $3,
+    merchant_hash = $4,
+    encrypted_display_title = $5,
+    category = $6,
+    currency_code = $7,
+    amount_units = $8,
+    amount_nanos = $9,
+    occurred_at = $10
+WHERE e.id = $1
+  AND e.user_id = $2
+RETURNING e.id, e.user_id, e.receipt_id, e.encrypted_merchant_name, e.merchant_hash, e.encrypted_display_title, e.category, e.currency_code, e.amount_units, e.amount_nanos, e.occurred_at, e.created_at
+`
+
+type UpdateExpenseByIDParams struct {
+	ID                    uuid.UUID          `json:"id"`
+	UserID                string             `json:"user_id"`
+	EncryptedMerchantName []byte             `json:"encrypted_merchant_name"`
+	MerchantHash          string             `json:"merchant_hash"`
+	EncryptedDisplayTitle []byte             `json:"encrypted_display_title"`
+	Category              string             `json:"category"`
+	CurrencyCode          string             `json:"currency_code"`
+	AmountUnits           int64              `json:"amount_units"`
+	AmountNanos           int32              `json:"amount_nanos"`
+	OccurredAt            pgtype.Timestamptz `json:"occurred_at"`
+}
+
+func (q *Queries) UpdateExpenseByID(ctx context.Context, arg UpdateExpenseByIDParams) (Expense, error) {
+	row := q.db.QueryRow(ctx, updateExpenseByID,
+		arg.ID,
+		arg.UserID,
+		arg.EncryptedMerchantName,
+		arg.MerchantHash,
+		arg.EncryptedDisplayTitle,
+		arg.Category,
+		arg.CurrencyCode,
+		arg.AmountUnits,
+		arg.AmountNanos,
+		arg.OccurredAt,
+	)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.EncryptedMerchantName,
+		&i.MerchantHash,
+		&i.EncryptedDisplayTitle,
+		&i.Category,
+		&i.CurrencyCode,
+		&i.AmountUnits,
+		&i.AmountNanos,
+		&i.OccurredAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateLatestExpenseByMerchant = `-- name: UpdateLatestExpenseByMerchant :one
+UPDATE expenses AS e
+SET
+    encrypted_merchant_name = $3,
+    merchant_hash = $2,
+    encrypted_display_title = $4,
+    category = $5,
+    currency_code = $6,
+    amount_units = $7,
+    amount_nanos = $8,
+    occurred_at = $9
+WHERE e.id = (
+    SELECT e2.id
+    FROM expenses AS e2
+    WHERE e2.user_id = $1
+      AND e2.merchant_hash = $2
+    ORDER BY e2.created_at DESC
+    LIMIT 1
+)
+RETURNING e.id, e.user_id, e.receipt_id, e.encrypted_merchant_name, e.merchant_hash, e.encrypted_display_title, e.category, e.currency_code, e.amount_units, e.amount_nanos, e.occurred_at, e.created_at
+`
+
+type UpdateLatestExpenseByMerchantParams struct {
+	UserID                string             `json:"user_id"`
+	MerchantHash          string             `json:"merchant_hash"`
+	EncryptedMerchantName []byte             `json:"encrypted_merchant_name"`
+	EncryptedDisplayTitle []byte             `json:"encrypted_display_title"`
+	Category              string             `json:"category"`
+	CurrencyCode          string             `json:"currency_code"`
+	AmountUnits           int64              `json:"amount_units"`
+	AmountNanos           int32              `json:"amount_nanos"`
+	OccurredAt            pgtype.Timestamptz `json:"occurred_at"`
+}
+
+func (q *Queries) UpdateLatestExpenseByMerchant(ctx context.Context, arg UpdateLatestExpenseByMerchantParams) (Expense, error) {
+	row := q.db.QueryRow(ctx, updateLatestExpenseByMerchant,
+		arg.UserID,
+		arg.MerchantHash,
+		arg.EncryptedMerchantName,
+		arg.EncryptedDisplayTitle,
+		arg.Category,
+		arg.CurrencyCode,
+		arg.AmountUnits,
+		arg.AmountNanos,
+		arg.OccurredAt,
+	)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.EncryptedMerchantName,
+		&i.MerchantHash,
+		&i.EncryptedDisplayTitle,
+		&i.Category,
+		&i.CurrencyCode,
+		&i.AmountUnits,
+		&i.AmountNanos,
+		&i.OccurredAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }

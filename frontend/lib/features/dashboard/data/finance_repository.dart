@@ -3,24 +3,22 @@ import 'package:fixnum/fixnum.dart';
 import '../../../gen/primerpeso/documents/v1/documents.pb.dart' as documentsv1;
 import '../../../gen/primerpeso/finance/v1/finance.connect.client.dart';
 import '../../../gen/primerpeso/finance/v1/finance.pb.dart' as financev1;
-import '../../auth/data/auth_repository.dart';
+import '../../../core/api/request_headers.dart';
 
 class FinanceRepository {
-  FinanceRepository({required this.client});
+  FinanceRepository({required this.client, required this.deviceId});
 
   final FinanceServiceClient client;
+  final String deviceId;
 
-  Future<financev1.GetScoreSummaryResponse> getScoreSummary(
-    String accessToken,
-  ) {
+  Future<financev1.GetScoreSummaryResponse> getScoreSummary() {
     return client.getScoreSummary(
       financev1.GetScoreSummaryRequest(),
-      headers: authHeaders(accessToken),
+      headers: deviceHeaders(deviceId),
     );
   }
 
   Future<financev1.ConfirmExpenseResponse> confirmExpense({
-    required String accessToken,
     required documentsv1.ReceiptDraft draft,
     required String merchantName,
     required String displayTitle,
@@ -40,7 +38,15 @@ class FinanceRepository {
         ),
         occurredAt: draft.purchasedAt,
       ),
-      headers: authHeaders(accessToken),
+      headers: deviceHeaders(deviceId),
     );
+  }
+
+  Future<List<financev1.Expense>> listExpenses({int pageSize = 100}) async {
+    final response = await client.listExpenses(
+      financev1.ListExpensesRequest(pageSize: pageSize),
+      headers: deviceHeaders(deviceId),
+    );
+    return response.expenses;
   }
 }

@@ -46,6 +46,18 @@ message UploadReceiptRequest {
 
 message UploadReceiptResponse {
   ReceiptDraft draft = 1;
+  ExtractionDecision decision = 2;
+  repeated string missing_fields = 3;
+  string rationale = 4;
+  double confidence = 5;
+  primerpeso.finance.v1.Expense expense = 6;
+  primerpeso.finance.v1.ScoreSummary score_summary = 7;
+}
+
+enum ExtractionDecision {
+  EXTRACTION_DECISION_UNSPECIFIED = 0;
+  EXTRACTION_DECISION_AUTO_REGISTER = 1;
+  EXTRACTION_DECISION_NEEDS_CLARIFICATION = 2;
 }
 
 message GetReceiptDraftRequest {

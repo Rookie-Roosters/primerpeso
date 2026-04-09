@@ -78,7 +78,7 @@ services:
       SMTP_PORT: "1025"
       SMTP_FROM: hola@primerpeso.local
       MOBILE_DEEP_LINK_SCHEME: primerpeso
-      XAI_MODEL: grok-4
+      XAI_MODEL: grok-4-1-fast-reasoning
       OCR_BACKEND: tesseract
       OCR_LANGUAGE: spa+eng
     ports:

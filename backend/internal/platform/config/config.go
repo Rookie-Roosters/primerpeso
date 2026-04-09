@@ -39,9 +39,10 @@ type Config struct {
 	MinIOBucket    string `env:"MINIO_BUCKET" envDefault:"primerpeso-receipts"`
 	MinIOUseSSL    bool   `env:"MINIO_USE_SSL" envDefault:"false"`
 
-	XAIAPIKey string `env:"XAI_API_KEY"`
-	XAIBaseURL string `env:"XAI_BASE_URL" envDefault:"https://api.x.ai/v1"`
-	XAIModel  string `env:"XAI_MODEL" envDefault:"grok-4"`
+	XAIAPIKey             string `env:"XAI_API_KEY"`
+	XAIBaseURL            string `env:"XAI_BASE_URL" envDefault:"https://api.x.ai/v1"`
+	XAIModel              string `env:"XAI_MODEL" envDefault:"grok-4-1-fast-reasoning"`
+	AgentSystemPromptPath string `env:"AGENT_SYSTEM_PROMPT_PATH" envDefault:"internal/agent/context/system_prompt.md"`
 
 	JWTAccessTTL  time.Duration `env:"JWT_ACCESS_TTL" envDefault:"15m"`
 	JWTRefreshTTL time.Duration `env:"JWT_REFRESH_TTL" envDefault:"168h"`

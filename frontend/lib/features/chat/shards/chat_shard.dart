@@ -192,6 +192,17 @@ class ChatShard extends Shard<ChatState> {
     emit(state.copyWith(runStatus: RunStatus.idle, clearError: true));
   }
 
+  void addSystemMessage(String content) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) return;
+    final message = ChatMessage(
+      id: 's-${DateTime.now().microsecondsSinceEpoch}',
+      role: ChatRole.system,
+      content: trimmed,
+    );
+    emit(state.copyWith(messages: [...state.messages, message]));
+  }
+
   @override
   void dispose() {
     _sub?.cancel();

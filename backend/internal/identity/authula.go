@@ -9,9 +9,9 @@ import (
 	authula "github.com/Authula/authula"
 	authcfg "github.com/Authula/authula/config"
 	authmodels "github.com/Authula/authula/models"
+	emailplugin "github.com/Authula/authula/plugins/email"
 	emailpassword "github.com/Authula/authula/plugins/email-password"
 	emailpasswordtypes "github.com/Authula/authula/plugins/email-password/types"
-	emailplugin "github.com/Authula/authula/plugins/email"
 	emailtypes "github.com/Authula/authula/plugins/email/types"
 	authjwt "github.com/Authula/authula/plugins/jwt"
 	authjwtrepo "github.com/Authula/authula/plugins/jwt/repositories"
@@ -69,6 +69,7 @@ func NewModule(cfg config.Config, logger *slog.Logger) (*Module, error) {
 					"Connect-Protocol-Version",
 					"Connect-Timeout-Ms",
 					"X-User-Agent",
+					"X-Device-ID",
 				},
 			},
 		}),
@@ -112,17 +113,24 @@ func NewModule(cfg config.Config, logger *slog.Logger) (*Module, error) {
 			},
 		},
 	}
-	oauthPlugin := authoauth.New(oauthConfig)
+	var oauthPlugin *authoauth.OAuth2Plugin
+	if oauthConfig.Enabled {
+		oauthPlugin = authoauth.New(oauthConfig)
+	}
+
+	plugins := []authmodels.Plugin{
+		emailPlugin,
+		emailPasswordPlugin,
+		sessionplugin.New(sessionplugin.SessionPluginConfig{Enabled: true}),
+		jwtPlugin,
+	}
+	if oauthPlugin != nil {
+		plugins = append(plugins, oauthPlugin)
+	}
 
 	auth := authula.New(&authula.AuthConfig{
-		Config: authConfig,
-		Plugins: []authmodels.Plugin{
-			emailPlugin,
-			emailPasswordPlugin,
-			sessionplugin.New(sessionplugin.SessionPluginConfig{Enabled: true}),
-			jwtPlugin,
-			oauthPlugin,
-		},
+		Config:  authConfig,
+		Plugins: plugins,
 	})
 
 	jwtService, ok := auth.ServiceRegistry.Get(authmodels.ServiceJWT.String()).(*authjwtservices.JWTServiceImpl)
@@ -156,12 +164,17 @@ func NewModule(cfg config.Config, logger *slog.Logger) (*Module, error) {
 		}
 	}
 
+	var oauthAPI *authoauth.API
+	if oauthPlugin != nil {
+		oauthAPI = oauthPlugin.Api
+	}
+
 	return &Module{
 		cfg:               cfg,
 		logger:            logger,
 		Auth:              auth,
 		EmailPasswordAPI:  emailpassword.BuildAPI(emailPasswordPlugin),
-		OAuthAPI:          authoauth.BuildAPI(oauthPlugin),
+		OAuthAPI:          oauthAPI,
 		JWTService:        jwtService,
 		RefreshService:    refreshService,
 		RefreshRepository: refreshRepository,

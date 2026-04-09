@@ -10,8 +10,8 @@ import (
 
 type stubExtractor struct{}
 
-func NewExtractor(config.Config) OCRExtractor {
-	return stubExtractor{}
+func NewExtractor(cfg config.Config) OCRExtractor {
+	return newMultimodalExtractor(cfg)
 }
 
 func (stubExtractor) Extract(_ context.Context, content []byte, mimeType string) (OCRText, error) {

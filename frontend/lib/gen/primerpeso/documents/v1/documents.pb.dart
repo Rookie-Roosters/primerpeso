@@ -345,9 +345,21 @@ class UploadReceiptRequest extends $pb.GeneratedMessage {
 class UploadReceiptResponse extends $pb.GeneratedMessage {
   factory UploadReceiptResponse({
     ReceiptDraft? draft,
+    ExtractionDecision? decision,
+    $core.Iterable<$core.String>? missingFields,
+    $core.String? rationale,
+    $core.double? confidence,
+    $0.Expense? expense,
+    $0.ScoreSummary? scoreSummary,
   }) {
     final result = create();
     if (draft != null) result.draft = draft;
+    if (decision != null) result.decision = decision;
+    if (missingFields != null) result.missingFields.addAll(missingFields);
+    if (rationale != null) result.rationale = rationale;
+    if (confidence != null) result.confidence = confidence;
+    if (expense != null) result.expense = expense;
+    if (scoreSummary != null) result.scoreSummary = scoreSummary;
     return result;
   }
 
@@ -367,6 +379,15 @@ class UploadReceiptResponse extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOM<ReceiptDraft>(1, _omitFieldNames ? '' : 'draft',
         subBuilder: ReceiptDraft.create)
+    ..aE<ExtractionDecision>(2, _omitFieldNames ? '' : 'decision',
+        enumValues: ExtractionDecision.values)
+    ..pPS(3, _omitFieldNames ? '' : 'missingFields')
+    ..aOS(4, _omitFieldNames ? '' : 'rationale')
+    ..aD(5, _omitFieldNames ? '' : 'confidence')
+    ..aOM<$0.Expense>(6, _omitFieldNames ? '' : 'expense',
+        subBuilder: $0.Expense.create)
+    ..aOM<$0.ScoreSummary>(7, _omitFieldNames ? '' : 'scoreSummary',
+        subBuilder: $0.ScoreSummary.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -399,6 +420,58 @@ class UploadReceiptResponse extends $pb.GeneratedMessage {
   void clearDraft() => $_clearField(1);
   @$pb.TagNumber(1)
   ReceiptDraft ensureDraft() => $_ensure(0);
+
+  @$pb.TagNumber(2)
+  ExtractionDecision get decision => $_getN(1);
+  @$pb.TagNumber(2)
+  set decision(ExtractionDecision value) => $_setField(2, value);
+  @$pb.TagNumber(2)
+  $core.bool hasDecision() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearDecision() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $pb.PbList<$core.String> get missingFields => $_getList(2);
+
+  @$pb.TagNumber(4)
+  $core.String get rationale => $_getSZ(3);
+  @$pb.TagNumber(4)
+  set rationale($core.String value) => $_setString(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasRationale() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRationale() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.double get confidence => $_getN(4);
+  @$pb.TagNumber(5)
+  set confidence($core.double value) => $_setDouble(4, value);
+  @$pb.TagNumber(5)
+  $core.bool hasConfidence() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearConfidence() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  $0.Expense get expense => $_getN(5);
+  @$pb.TagNumber(6)
+  set expense($0.Expense value) => $_setField(6, value);
+  @$pb.TagNumber(6)
+  $core.bool hasExpense() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearExpense() => $_clearField(6);
+  @$pb.TagNumber(6)
+  $0.Expense ensureExpense() => $_ensure(5);
+
+  @$pb.TagNumber(7)
+  $0.ScoreSummary get scoreSummary => $_getN(6);
+  @$pb.TagNumber(7)
+  set scoreSummary($0.ScoreSummary value) => $_setField(7, value);
+  @$pb.TagNumber(7)
+  $core.bool hasScoreSummary() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearScoreSummary() => $_clearField(7);
+  @$pb.TagNumber(7)
+  $0.ScoreSummary ensureScoreSummary() => $_ensure(6);
 }
 
 class GetReceiptDraftRequest extends $pb.GeneratedMessage {

@@ -2,6 +2,8 @@ FROM golang:1.26-bookworm AS builder
 
 WORKDIR /app
 
+ARG TARGETARCH
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
@@ -16,11 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY go.mod go.sum ./
 RUN go mod download
 
-RUN CGO_ENABLED=1 go generate github.com/kreuzberg-dev/kreuzberg/packages/go/v4
+RUN go run github.com/kreuzberg-dev/kreuzberg/packages/go/v4/cmd/install@v4.8.0 --dir /opt/kreuzberg --no-generate
 
 COPY . .
 
-RUN CGO_ENABLED=1 GOOS=linux go build -tags kreuzberg -o /out/server ./cmd/server
+RUN case "${TARGETARCH}" in \
+      amd64) KREUZBERG_LIB_DIR=/opt/kreuzberg/lib/linux_amd64 ;; \
+      arm64) KREUZBERG_LIB_DIR=/opt/kreuzberg/lib/linux_arm64 ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    CGO_ENABLED=1 \
+    GOOS=linux \
+    CGO_CFLAGS="-I/opt/kreuzberg/include" \
+    CGO_LDFLAGS="-L${KREUZBERG_LIB_DIR} -Wl,-Bstatic -lkreuzberg_ffi -Wl,-Bdynamic -lpthread -ldl -lm -lstdc++" \
+    go build -tags kreuzberg -o /out/server ./cmd/server
 
 FROM debian:bookworm-slim AS runtime
 

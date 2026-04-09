@@ -75,6 +75,55 @@ func (ReceiptStatus) EnumDescriptor() ([]byte, []int) {
 	return file_primerpeso_documents_v1_documents_proto_rawDescGZIP(), []int{0}
 }
 
+type ExtractionDecision int32
+
+const (
+	ExtractionDecision_EXTRACTION_DECISION_UNSPECIFIED         ExtractionDecision = 0
+	ExtractionDecision_EXTRACTION_DECISION_AUTO_REGISTER       ExtractionDecision = 1
+	ExtractionDecision_EXTRACTION_DECISION_NEEDS_CLARIFICATION ExtractionDecision = 2
+)
+
+// Enum value maps for ExtractionDecision.
+var (
+	ExtractionDecision_name = map[int32]string{
+		0: "EXTRACTION_DECISION_UNSPECIFIED",
+		1: "EXTRACTION_DECISION_AUTO_REGISTER",
+		2: "EXTRACTION_DECISION_NEEDS_CLARIFICATION",
+	}
+	ExtractionDecision_value = map[string]int32{
+		"EXTRACTION_DECISION_UNSPECIFIED":         0,
+		"EXTRACTION_DECISION_AUTO_REGISTER":       1,
+		"EXTRACTION_DECISION_NEEDS_CLARIFICATION": 2,
+	}
+)
+
+func (x ExtractionDecision) Enum() *ExtractionDecision {
+	p := new(ExtractionDecision)
+	*p = x
+	return p
+}
+
+func (x ExtractionDecision) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExtractionDecision) Descriptor() protoreflect.EnumDescriptor {
+	return file_primerpeso_documents_v1_documents_proto_enumTypes[1].Descriptor()
+}
+
+func (ExtractionDecision) Type() protoreflect.EnumType {
+	return &file_primerpeso_documents_v1_documents_proto_enumTypes[1]
+}
+
+func (x ExtractionDecision) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExtractionDecision.Descriptor instead.
+func (ExtractionDecision) EnumDescriptor() ([]byte, []int) {
+	return file_primerpeso_documents_v1_documents_proto_rawDescGZIP(), []int{1}
+}
+
 type ReceiptLineItem struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Description   string                 `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
@@ -306,6 +355,12 @@ func (x *UploadReceiptRequest) GetMimeType() string {
 type UploadReceiptResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Draft         *ReceiptDraft          `protobuf:"bytes,1,opt,name=draft,proto3" json:"draft,omitempty"`
+	Decision      ExtractionDecision     `protobuf:"varint,2,opt,name=decision,proto3,enum=primerpeso.documents.v1.ExtractionDecision" json:"decision,omitempty"`
+	MissingFields []string               `protobuf:"bytes,3,rep,name=missing_fields,json=missingFields,proto3" json:"missing_fields,omitempty"`
+	Rationale     string                 `protobuf:"bytes,4,opt,name=rationale,proto3" json:"rationale,omitempty"`
+	Confidence    float64                `protobuf:"fixed64,5,opt,name=confidence,proto3" json:"confidence,omitempty"`
+	Expense       *v1.Expense            `protobuf:"bytes,6,opt,name=expense,proto3" json:"expense,omitempty"`
+	ScoreSummary  *v1.ScoreSummary       `protobuf:"bytes,7,opt,name=score_summary,json=scoreSummary,proto3" json:"score_summary,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -343,6 +398,48 @@ func (*UploadReceiptResponse) Descriptor() ([]byte, []int) {
 func (x *UploadReceiptResponse) GetDraft() *ReceiptDraft {
 	if x != nil {
 		return x.Draft
+	}
+	return nil
+}
+
+func (x *UploadReceiptResponse) GetDecision() ExtractionDecision {
+	if x != nil {
+		return x.Decision
+	}
+	return ExtractionDecision_EXTRACTION_DECISION_UNSPECIFIED
+}
+
+func (x *UploadReceiptResponse) GetMissingFields() []string {
+	if x != nil {
+		return x.MissingFields
+	}
+	return nil
+}
+
+func (x *UploadReceiptResponse) GetRationale() string {
+	if x != nil {
+		return x.Rationale
+	}
+	return ""
+}
+
+func (x *UploadReceiptResponse) GetConfidence() float64 {
+	if x != nil {
+		return x.Confidence
+	}
+	return 0
+}
+
+func (x *UploadReceiptResponse) GetExpense() *v1.Expense {
+	if x != nil {
+		return x.Expense
+	}
+	return nil
+}
+
+func (x *UploadReceiptResponse) GetScoreSummary() *v1.ScoreSummary {
+	if x != nil {
+		return x.ScoreSummary
 	}
 	return nil
 }
@@ -547,9 +644,17 @@ const file_primerpeso_documents_v1_documents_proto_rawDesc = "" +
 	"\x14UploadReceiptRequest\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\fR\acontent\x12\x1a\n" +
 	"\bfilename\x18\x02 \x01(\tR\bfilename\x12\x1b\n" +
-	"\tmime_type\x18\x03 \x01(\tR\bmimeType\"T\n" +
+	"\tmime_type\x18\x03 \x01(\tR\bmimeType\"\x86\x03\n" +
 	"\x15UploadReceiptResponse\x12;\n" +
-	"\x05draft\x18\x01 \x01(\v2%.primerpeso.documents.v1.ReceiptDraftR\x05draft\"7\n" +
+	"\x05draft\x18\x01 \x01(\v2%.primerpeso.documents.v1.ReceiptDraftR\x05draft\x12G\n" +
+	"\bdecision\x18\x02 \x01(\x0e2+.primerpeso.documents.v1.ExtractionDecisionR\bdecision\x12%\n" +
+	"\x0emissing_fields\x18\x03 \x03(\tR\rmissingFields\x12\x1c\n" +
+	"\trationale\x18\x04 \x01(\tR\trationale\x12\x1e\n" +
+	"\n" +
+	"confidence\x18\x05 \x01(\x01R\n" +
+	"confidence\x128\n" +
+	"\aexpense\x18\x06 \x01(\v2\x1e.primerpeso.finance.v1.ExpenseR\aexpense\x12H\n" +
+	"\rscore_summary\x18\a \x01(\v2#.primerpeso.finance.v1.ScoreSummaryR\fscoreSummary\"7\n" +
 	"\x16GetReceiptDraftRequest\x12\x1d\n" +
 	"\n" +
 	"receipt_id\x18\x01 \x01(\tR\treceiptId\"V\n" +
@@ -563,7 +668,11 @@ const file_primerpeso_documents_v1_documents_proto_rawDesc = "" +
 	"\x1aRECEIPT_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19RECEIPT_STATUS_PROCESSING\x10\x01\x12\x18\n" +
 	"\x14RECEIPT_STATUS_READY\x10\x02\x12\x19\n" +
-	"\x15RECEIPT_STATUS_FAILED\x10\x032\xf2\x02\n" +
+	"\x15RECEIPT_STATUS_FAILED\x10\x03*\x8d\x01\n" +
+	"\x12ExtractionDecision\x12#\n" +
+	"\x1fEXTRACTION_DECISION_UNSPECIFIED\x10\x00\x12%\n" +
+	"!EXTRACTION_DECISION_AUTO_REGISTER\x10\x01\x12+\n" +
+	"'EXTRACTION_DECISION_NEEDS_CLARIFICATION\x10\x022\xf2\x02\n" +
 	"\x0eReceiptService\x12n\n" +
 	"\rUploadReceipt\x12-.primerpeso.documents.v1.UploadReceiptRequest\x1a..primerpeso.documents.v1.UploadReceiptResponse\x12t\n" +
 	"\x0fGetReceiptDraft\x12/.primerpeso.documents.v1.GetReceiptDraftRequest\x1a0.primerpeso.documents.v1.GetReceiptDraftResponse\x12z\n" +
@@ -581,42 +690,48 @@ func file_primerpeso_documents_v1_documents_proto_rawDescGZIP() []byte {
 	return file_primerpeso_documents_v1_documents_proto_rawDescData
 }
 
-var file_primerpeso_documents_v1_documents_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_primerpeso_documents_v1_documents_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_primerpeso_documents_v1_documents_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_primerpeso_documents_v1_documents_proto_goTypes = []any{
 	(ReceiptStatus)(0),                // 0: primerpeso.documents.v1.ReceiptStatus
-	(*ReceiptLineItem)(nil),           // 1: primerpeso.documents.v1.ReceiptLineItem
-	(*ReceiptDraft)(nil),              // 2: primerpeso.documents.v1.ReceiptDraft
-	(*UploadReceiptRequest)(nil),      // 3: primerpeso.documents.v1.UploadReceiptRequest
-	(*UploadReceiptResponse)(nil),     // 4: primerpeso.documents.v1.UploadReceiptResponse
-	(*GetReceiptDraftRequest)(nil),    // 5: primerpeso.documents.v1.GetReceiptDraftRequest
-	(*GetReceiptDraftResponse)(nil),   // 6: primerpeso.documents.v1.GetReceiptDraftResponse
-	(*ListReceiptDraftsRequest)(nil),  // 7: primerpeso.documents.v1.ListReceiptDraftsRequest
-	(*ListReceiptDraftsResponse)(nil), // 8: primerpeso.documents.v1.ListReceiptDraftsResponse
-	(*v1.Money)(nil),                  // 9: primerpeso.finance.v1.Money
-	(*timestamppb.Timestamp)(nil),     // 10: google.protobuf.Timestamp
+	(ExtractionDecision)(0),           // 1: primerpeso.documents.v1.ExtractionDecision
+	(*ReceiptLineItem)(nil),           // 2: primerpeso.documents.v1.ReceiptLineItem
+	(*ReceiptDraft)(nil),              // 3: primerpeso.documents.v1.ReceiptDraft
+	(*UploadReceiptRequest)(nil),      // 4: primerpeso.documents.v1.UploadReceiptRequest
+	(*UploadReceiptResponse)(nil),     // 5: primerpeso.documents.v1.UploadReceiptResponse
+	(*GetReceiptDraftRequest)(nil),    // 6: primerpeso.documents.v1.GetReceiptDraftRequest
+	(*GetReceiptDraftResponse)(nil),   // 7: primerpeso.documents.v1.GetReceiptDraftResponse
+	(*ListReceiptDraftsRequest)(nil),  // 8: primerpeso.documents.v1.ListReceiptDraftsRequest
+	(*ListReceiptDraftsResponse)(nil), // 9: primerpeso.documents.v1.ListReceiptDraftsResponse
+	(*v1.Money)(nil),                  // 10: primerpeso.finance.v1.Money
+	(*timestamppb.Timestamp)(nil),     // 11: google.protobuf.Timestamp
+	(*v1.Expense)(nil),                // 12: primerpeso.finance.v1.Expense
+	(*v1.ScoreSummary)(nil),           // 13: primerpeso.finance.v1.ScoreSummary
 }
 var file_primerpeso_documents_v1_documents_proto_depIdxs = []int32{
-	9,  // 0: primerpeso.documents.v1.ReceiptLineItem.amount:type_name -> primerpeso.finance.v1.Money
+	10, // 0: primerpeso.documents.v1.ReceiptLineItem.amount:type_name -> primerpeso.finance.v1.Money
 	0,  // 1: primerpeso.documents.v1.ReceiptDraft.status:type_name -> primerpeso.documents.v1.ReceiptStatus
-	1,  // 2: primerpeso.documents.v1.ReceiptDraft.line_items:type_name -> primerpeso.documents.v1.ReceiptLineItem
-	9,  // 3: primerpeso.documents.v1.ReceiptDraft.total:type_name -> primerpeso.finance.v1.Money
-	10, // 4: primerpeso.documents.v1.ReceiptDraft.purchased_at:type_name -> google.protobuf.Timestamp
-	10, // 5: primerpeso.documents.v1.ReceiptDraft.created_at:type_name -> google.protobuf.Timestamp
-	2,  // 6: primerpeso.documents.v1.UploadReceiptResponse.draft:type_name -> primerpeso.documents.v1.ReceiptDraft
-	2,  // 7: primerpeso.documents.v1.GetReceiptDraftResponse.draft:type_name -> primerpeso.documents.v1.ReceiptDraft
-	2,  // 8: primerpeso.documents.v1.ListReceiptDraftsResponse.drafts:type_name -> primerpeso.documents.v1.ReceiptDraft
-	3,  // 9: primerpeso.documents.v1.ReceiptService.UploadReceipt:input_type -> primerpeso.documents.v1.UploadReceiptRequest
-	5,  // 10: primerpeso.documents.v1.ReceiptService.GetReceiptDraft:input_type -> primerpeso.documents.v1.GetReceiptDraftRequest
-	7,  // 11: primerpeso.documents.v1.ReceiptService.ListReceiptDrafts:input_type -> primerpeso.documents.v1.ListReceiptDraftsRequest
-	4,  // 12: primerpeso.documents.v1.ReceiptService.UploadReceipt:output_type -> primerpeso.documents.v1.UploadReceiptResponse
-	6,  // 13: primerpeso.documents.v1.ReceiptService.GetReceiptDraft:output_type -> primerpeso.documents.v1.GetReceiptDraftResponse
-	8,  // 14: primerpeso.documents.v1.ReceiptService.ListReceiptDrafts:output_type -> primerpeso.documents.v1.ListReceiptDraftsResponse
-	12, // [12:15] is the sub-list for method output_type
-	9,  // [9:12] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	2,  // 2: primerpeso.documents.v1.ReceiptDraft.line_items:type_name -> primerpeso.documents.v1.ReceiptLineItem
+	10, // 3: primerpeso.documents.v1.ReceiptDraft.total:type_name -> primerpeso.finance.v1.Money
+	11, // 4: primerpeso.documents.v1.ReceiptDraft.purchased_at:type_name -> google.protobuf.Timestamp
+	11, // 5: primerpeso.documents.v1.ReceiptDraft.created_at:type_name -> google.protobuf.Timestamp
+	3,  // 6: primerpeso.documents.v1.UploadReceiptResponse.draft:type_name -> primerpeso.documents.v1.ReceiptDraft
+	1,  // 7: primerpeso.documents.v1.UploadReceiptResponse.decision:type_name -> primerpeso.documents.v1.ExtractionDecision
+	12, // 8: primerpeso.documents.v1.UploadReceiptResponse.expense:type_name -> primerpeso.finance.v1.Expense
+	13, // 9: primerpeso.documents.v1.UploadReceiptResponse.score_summary:type_name -> primerpeso.finance.v1.ScoreSummary
+	3,  // 10: primerpeso.documents.v1.GetReceiptDraftResponse.draft:type_name -> primerpeso.documents.v1.ReceiptDraft
+	3,  // 11: primerpeso.documents.v1.ListReceiptDraftsResponse.drafts:type_name -> primerpeso.documents.v1.ReceiptDraft
+	4,  // 12: primerpeso.documents.v1.ReceiptService.UploadReceipt:input_type -> primerpeso.documents.v1.UploadReceiptRequest
+	6,  // 13: primerpeso.documents.v1.ReceiptService.GetReceiptDraft:input_type -> primerpeso.documents.v1.GetReceiptDraftRequest
+	8,  // 14: primerpeso.documents.v1.ReceiptService.ListReceiptDrafts:input_type -> primerpeso.documents.v1.ListReceiptDraftsRequest
+	5,  // 15: primerpeso.documents.v1.ReceiptService.UploadReceipt:output_type -> primerpeso.documents.v1.UploadReceiptResponse
+	7,  // 16: primerpeso.documents.v1.ReceiptService.GetReceiptDraft:output_type -> primerpeso.documents.v1.GetReceiptDraftResponse
+	9,  // 17: primerpeso.documents.v1.ReceiptService.ListReceiptDrafts:output_type -> primerpeso.documents.v1.ListReceiptDraftsResponse
+	15, // [15:18] is the sub-list for method output_type
+	12, // [12:15] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_primerpeso_documents_v1_documents_proto_init() }
@@ -629,7 +744,7 @@ func file_primerpeso_documents_v1_documents_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_primerpeso_documents_v1_documents_proto_rawDesc), len(file_primerpeso_documents_v1_documents_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
