@@ -1,0 +1,33 @@
+# DigitalOcean App Platform — Flutter web. Deploy after API is live.
+#
+#   echo 'PRIMERPESO_API_BASE_URL=https://YOUR-api-host' > scripts/digitalocean/web.local.env
+#   ./scripts/digitalocean/create-web-app.sh
+#
+# Or: python3 scripts/digitalocean/render_do_specs.py web /tmp/app-web.yaml && doctl apps create --spec /tmp/app-web.yaml
+name: primerpeso-web
+region: nyc
+alerts:
+  - rule: DEPLOYMENT_FAILED
+
+services:
+  - name: web
+    github:
+      repo: Rookie-Roosters/primerpeso
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: frontend/Dockerfile
+    source_dir: frontend
+    http_port: 80
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 15
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 5
+    envs:
+      - key: PRIMERPESO_API_BASE_URL
+        value: __PRIMERPESO_API_BASE_URL__
+        scope: BUILD_TIME
+        type: GENERAL

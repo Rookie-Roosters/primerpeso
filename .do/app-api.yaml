@@ -1,0 +1,115 @@
+# DigitalOcean App Platform — API (own *.ondigitalocean.app URL).
+#
+# Deploy (secrets stay out of git):
+#   cp scripts/digitalocean/api.local.env.example scripts/digitalocean/api.local.env
+#   # fill api.local.env (Spaces keys, XAI, SMTP, openssl rand -hex 32 x3 for AUTH/MASTER/HASH)
+#   ./scripts/digitalocean/create-api-app.sh
+#
+# Or render + validate manually:
+#   python3 scripts/digitalocean/render_do_specs.py api /tmp/app-api.yaml
+#   doctl apps spec validate /tmp/app-api.yaml
+#   doctl apps create --spec /tmp/app-api.yaml
+name: primerpeso-api
+region: nyc
+alerts:
+  - rule: DEPLOYMENT_FAILED
+
+databases:
+  - name: primerpeso-db
+    engine: PG
+    version: "16"
+    production: false
+    # Dev DB: db_name must match this component name or be omitted (DO API rule).
+    db_name: primerpeso-db
+    db_user: primerpeso-db
+
+services:
+  - name: api
+    github:
+      repo: Rookie-Roosters/primerpeso
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: backend/Dockerfile
+    source_dir: backend
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 45
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 5
+    envs:
+      - key: APP_ENV
+        value: production
+        scope: RUN_TIME
+        type: GENERAL
+      - key: HTTP_ADDR
+        value: ":8080"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: PUBLIC_BASE_URL
+        value: ${_self.PUBLIC_URL}
+        scope: RUN_TIME
+        type: GENERAL
+      - key: DATABASE_URL
+        value: ${primerpeso-db.DATABASE_URL}
+        scope: RUN_TIME
+        type: GENERAL
+      - key: ALLOWED_ORIGINS
+        value: "*"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: AUTH_SECRET
+        value: __AUTH_SECRET__
+        scope: RUN_TIME
+        type: SECRET
+      - key: MASTER_KEY
+        value: __MASTER_KEY__
+        scope: RUN_TIME
+        type: SECRET
+      - key: HASH_KEY
+        value: __HASH_KEY__
+        scope: RUN_TIME
+        type: SECRET
+      - key: MINIO_ENDPOINT
+        value: __MINIO_ENDPOINT__
+        scope: RUN_TIME
+        type: GENERAL
+      - key: MINIO_ACCESS_KEY
+        value: __MINIO_ACCESS_KEY__
+        scope: RUN_TIME
+        type: SECRET
+      - key: MINIO_SECRET_KEY
+        value: __MINIO_SECRET_KEY__
+        scope: RUN_TIME
+        type: SECRET
+      - key: MINIO_BUCKET
+        value: __MINIO_BUCKET__
+        scope: RUN_TIME
+        type: GENERAL
+      - key: MINIO_USE_SSL
+        value: "true"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: MINIO_REGION
+        value: __MINIO_REGION__
+        scope: RUN_TIME
+        type: GENERAL
+      - key: XAI_API_KEY
+        value: __XAI_API_KEY__
+        scope: RUN_TIME
+        type: SECRET
+      - key: SMTP_HOST
+        value: __SMTP_HOST__
+        scope: RUN_TIME
+        type: GENERAL
+      - key: SMTP_PORT
+        value: "__SMTP_PORT__"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: SMTP_FROM
+        value: __SMTP_FROM__
+        scope: RUN_TIME
+        type: GENERAL
