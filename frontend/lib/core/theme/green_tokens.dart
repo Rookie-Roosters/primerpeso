@@ -27,6 +27,12 @@ const Color warmSurface = Color(0xFFF5F8F6);
 /// Dividers, input outlines, and card borders.
 const Color borderSubtle = Color(0xFFE0EBE5);
 
+/// Soft elevation used by every hero card and floating surface in the
+/// revamped UI. Single source of truth so cards stay visually consistent.
+const List<BoxShadow> cardShadowSoft = [
+  BoxShadow(color: Color(0x0E000000), blurRadius: 24, offset: Offset(0, 8)),
+];
+
 /// Width in logical pixels above which the web build draws a fixed mobile
 /// canvas instead of filling the window.
 const double mobileFrameBreakpoint = 600;
@@ -79,10 +85,12 @@ const RadiusToken tkRadiusSm = RadiusToken('sm');
 const RadiusToken tkRadiusMd = RadiusToken('md');
 const RadiusToken tkRadiusLg = RadiusToken('lg');
 const RadiusToken tkRadiusXl = RadiusToken('xl');
+const RadiusToken tkRadius2xl = RadiusToken('2xl');
 
 final Map<RadiusToken, Radius> appRadiusTokens = {
   tkRadiusSm: Radius.circular(8),
   tkRadiusMd: Radius.circular(16),
   tkRadiusLg: Radius.circular(24),
   tkRadiusXl: Radius.circular(32),
+  tkRadius2xl: Radius.circular(36),
 };

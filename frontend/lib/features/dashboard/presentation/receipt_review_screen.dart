@@ -4,6 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
+import '../../../core/theme/typography.dart';
+import '../../../core/ui/gradient_background.dart';
+import '../../../core/ui/hero_card.dart';
+import '../../../core/ui/pill_button.dart';
+import '../../../core/ui/screen_header.dart';
 import '../../../gen/primerpeso/documents/v1/documents.pb.dart' as documentsv1;
 
 class ReceiptReviewScreen extends StatefulWidget {
@@ -79,14 +84,18 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Gasto confirmado'),
+          title: Text('Gasto confirmado', style: PTypography.title),
           content: Text(
             'Tu score actualizado es ${response.scoreSummary.score}.',
+            style: PTypography.body,
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cerrar'),
+              child: Text(
+                'Cerrar',
+                style: PTypography.bodyStrong.copyWith(color: primaryGreen),
+              ),
             ),
           ],
         ),
@@ -105,106 +114,125 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: warmSurface,
+    return WarmGradientBackground(
       child: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              FButton.icon(
-                onPress: () => context.pop(),
-                child: const Icon(FIcons.arrowLeft),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Revisa la extracción',
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.6,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                widget.draft.redactedRawText.isEmpty
+              ScreenHeader(
+                title: 'Revisa la extracción',
+                subtitle: widget.draft.redactedRawText.isEmpty
                     ? 'Subimos el ticket y dejamos listo el borrador.'
                     : 'Antes de pasarlo al ledger, valida comercio, monto y categoría.',
-                style: const TextStyle(
-                  color: inkMuted,
-                  fontSize: 15,
-                  height: 1.4,
-                ),
+                leading: _BackButton(onTap: () => context.pop()),
               ),
               const SizedBox(height: 20),
-              if (_errorMessage != null) ...[
-                FAlert(
-                  variant: FAlertVariant.destructive,
-                  title: const Text('No pude confirmar el gasto'),
-                  subtitle: Text(_errorMessage!),
-                ),
-                const SizedBox(height: 12),
-              ],
-              _ReviewField(label: 'Comercio', controller: _merchantController),
-              const SizedBox(height: 12),
-              _ReviewField(label: 'Título', controller: _titleController),
-              const SizedBox(height: 12),
-              _ReviewField(label: 'Categoría', controller: _categoryController),
-              const SizedBox(height: 12),
-              _ReviewField(
-                label: 'Monto (MXN)',
-                controller: _amountController,
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: borderSubtle),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Texto redaccionado',
-                        style: TextStyle(
-                          color: ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_errorMessage != null) ...[
+                      FAlert(
+                        variant: FAlertVariant.destructive,
+                        title: const Text('No pude confirmar el gasto'),
+                        subtitle: Text(_errorMessage!),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.draft.redactedRawText.isEmpty
-                            ? 'No llegó texto OCR en esta captura; puedes confirmar de todos modos.'
-                            : widget.draft.redactedRawText,
-                        style: const TextStyle(
-                          color: inkMuted,
-                          fontSize: 13,
-                          height: 1.4,
-                        ),
-                      ),
+                      const SizedBox(height: 14),
                     ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FButton(
-                  onPress: _isSubmitting ? null : _confirm,
-                  child: Text(
-                    _isSubmitting ? 'Confirmando…' : 'Confirmar gasto',
-                  ),
+                    HeroCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _ReviewField(
+                            label: 'Comercio',
+                            controller: _merchantController,
+                          ),
+                          const SizedBox(height: 14),
+                          _ReviewField(
+                            label: 'Título',
+                            controller: _titleController,
+                          ),
+                          const SizedBox(height: 14),
+                          _ReviewField(
+                            label: 'Categoría',
+                            controller: _categoryController,
+                          ),
+                          const SizedBox(height: 14),
+                          _ReviewField(
+                            label: 'Monto (MXN)',
+                            controller: _amountController,
+                            keyboardType: TextInputType.number,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    HeroCard.compact(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Texto redaccionado',
+                            style: PTypography.bodyStrong,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            widget.draft.redactedRawText.isEmpty
+                                ? 'No llegó texto OCR en esta captura; puedes confirmar de todos modos.'
+                                : widget.draft.redactedRawText,
+                            style: PTypography.body.copyWith(
+                              color: inkMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    PillButton.primary(
+                      label: _isSubmitting ? 'Confirmando…' : 'Confirmar gasto',
+                      onPressed: _isSubmitting ? null : _confirm,
+                      busy: _isSubmitting,
+                    ),
+                    const SizedBox(height: 10),
+                    PillButton.surface(
+                      label: 'Cancelar',
+                      onPressed: _isSubmitting ? null : () => context.pop(),
+                      expand: true,
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BackButton extends StatelessWidget {
+  const _BackButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surface,
+          shape: BoxShape.circle,
+          border: Border.all(color: borderSubtle, width: 1.2),
+        ),
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(child: Icon(FIcons.arrowLeft, size: 18, color: ink)),
         ),
       ),
     );
@@ -227,11 +255,28 @@ class _ReviewField extends StatelessWidget {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      style: PTypography.body,
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: PTypography.label.copyWith(color: inkMuted),
         filled: true,
-        fillColor: surface,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        fillColor: warmSurface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: borderSubtle),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: borderSubtle),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: primaryGreen, width: 1.4),
+        ),
       ),
     );
   }

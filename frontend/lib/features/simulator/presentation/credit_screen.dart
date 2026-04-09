@@ -1,42 +1,50 @@
 import 'package:flutter/widgets.dart';
-import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/green_tokens.dart';
+import '../../../core/theme/typography.dart';
+import '../../../core/ui/gradient_background.dart';
+import '../../../core/ui/hero_card.dart';
+import '../../../core/ui/screen_header.dart';
+import 'simulator_back_button.dart';
 
 class CreditScreen extends StatelessWidget {
   const CreditScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: surface,
+    return WarmGradientBackground(
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FButton.icon(
-                onPress: () => context.pop(),
-                child: const Icon(FIcons.arrowLeft),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Simulador · Crédito',
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ScreenHeader(
+              title: 'Simulador · Crédito',
+              subtitle:
+                  'Te ayudaremos a entender el costo real de un crédito antes de firmar.',
+              leading: SimulatorBackButton(onTap: () => context.pop()),
+            ),
+            const SizedBox(height: 18),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                child: HeroCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Próximamente', style: PTypography.title),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Captura monto, plazo y tasa para ver pagos mensuales, intereses totales y banderas rojas antes de firmar.',
+                        style: PTypography.body.copyWith(color: inkMuted),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'Te ayudaremos a entender el costo real de un crédito antes de firmar.',
-                style: TextStyle(color: inkMuted, fontSize: 15, height: 1.4),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

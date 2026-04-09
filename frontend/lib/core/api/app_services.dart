@@ -23,6 +23,14 @@ class AppServices {
     required this.ledgerRefresh,
   });
 
+  /// Cross-screen one-shot trigger: a screen (e.g. tracker insight banner)
+  /// pushes a question here right before navigating to /chat, and the chat
+  /// surface drains it on its next build via a `ValueListenableBuilder`.
+  /// Set back to `null` after the chat consumes it.
+  final ValueNotifier<String?> pendingChatMessage = ValueNotifier<String?>(
+    null,
+  );
+
   factory AppServices.create({required String deviceId}) {
     final transport = connect_protocol.Transport(
       baseUrl: _defaultApiBaseUrl(),

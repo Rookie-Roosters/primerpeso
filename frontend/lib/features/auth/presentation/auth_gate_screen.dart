@@ -3,6 +3,11 @@ import 'package:forui/forui.dart';
 import 'package:shard/shard.dart';
 
 import '../../../core/theme/green_tokens.dart';
+import '../../../core/theme/typography.dart';
+import '../../../core/ui/gradient_background.dart';
+import '../../../core/ui/hero_card.dart';
+import '../../../core/ui/pill_button.dart';
+import '../../../core/ui/screen_header.dart';
 import '../domain/auth_state.dart';
 import '../shards/auth_shard.dart';
 
@@ -37,89 +42,84 @@ class _AuthGateScreenState extends State<AuthGateScreen> {
     return ShardBuilder<AuthShard, AuthState>(
       builder: (context, state) {
         final shard = ShardProvider.of<AuthShard>(context, listen: false);
-        return ColoredBox(
-          color: warmSurface,
+        return WarmGradientBackground(
           child: SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Entra para hablar con Peso',
-                    style: TextStyle(
-                      color: ink,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.8,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Activa chat, tickets y score en tiempo real con tu cuenta de PrimerPeso.',
-                    style: TextStyle(
-                      color: inkMuted,
-                      fontSize: 15,
-                      height: 1.4,
-                    ),
+                  const ScreenHeader(
+                    title: 'Entra para hablar\ncon Peso.',
+                    subtitle:
+                        'Activa chat, tickets y score en tiempo real con tu cuenta.',
                   ),
                   const SizedBox(height: 24),
-                  if (state.errorMessage != null) ...[
-                    FAlert(
-                      variant: FAlertVariant.destructive,
-                      title: const Text('No pude completar la acción'),
-                      subtitle: Text(state.errorMessage!),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (state.errorMessage != null) ...[
+                          FAlert(
+                            variant: FAlertVariant.destructive,
+                            title: const Text('No pude completar la acción'),
+                            subtitle: Text(state.errorMessage!),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (state.infoMessage != null) ...[
+                          FAlert(
+                            title: const Text('Listo'),
+                            subtitle: Text(state.infoMessage!),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (state.pendingResetToken != null)
+                          _ResetPasswordCard(
+                            controller: _resetPasswordController,
+                            isBusy: state.isBusy,
+                            onSubmit: () => shard.submitPasswordReset(
+                              _resetPasswordController.text,
+                            ),
+                            onCancel: shard.clearPendingReset,
+                          )
+                        else
+                          _AuthCard(
+                            mode: _mode,
+                            isBusy: state.isBusy,
+                            nameController: _nameController,
+                            emailController: _emailController,
+                            passwordController: _passwordController,
+                            onModeChanged: (mode) =>
+                                setState(() => _mode = mode),
+                            onSubmit: () {
+                              switch (_mode) {
+                                case _AuthMode.login:
+                                  shard.signIn(
+                                    email: _emailController.text.trim(),
+                                    password: _passwordController.text,
+                                  );
+                                case _AuthMode.register:
+                                  shard.register(
+                                    displayName: _nameController.text.trim(),
+                                    email: _emailController.text.trim(),
+                                    password: _passwordController.text,
+                                  );
+                                case _AuthMode.forgotPassword:
+                                  shard.requestPasswordReset(
+                                    _emailController.text.trim(),
+                                  );
+                              }
+                            },
+                            onGoogle: shard.startGoogleAuth,
+                            onResendVerification: () =>
+                                shard.resendVerificationEmail(
+                                  _emailController.text.trim(),
+                                ),
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (state.infoMessage != null) ...[
-                    FAlert(
-                      title: const Text('Listo'),
-                      subtitle: Text(state.infoMessage!),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  if (state.pendingResetToken != null)
-                    _ResetPasswordCard(
-                      controller: _resetPasswordController,
-                      isBusy: state.isBusy,
-                      onSubmit: () => shard.submitPasswordReset(
-                        _resetPasswordController.text,
-                      ),
-                      onCancel: shard.clearPendingReset,
-                    )
-                  else
-                    _AuthCard(
-                      mode: _mode,
-                      isBusy: state.isBusy,
-                      nameController: _nameController,
-                      emailController: _emailController,
-                      passwordController: _passwordController,
-                      onModeChanged: (mode) => setState(() => _mode = mode),
-                      onSubmit: () {
-                        switch (_mode) {
-                          case _AuthMode.login:
-                            shard.signIn(
-                              email: _emailController.text.trim(),
-                              password: _passwordController.text,
-                            );
-                          case _AuthMode.register:
-                            shard.register(
-                              displayName: _nameController.text.trim(),
-                              email: _emailController.text.trim(),
-                              password: _passwordController.text,
-                            );
-                          case _AuthMode.forgotPassword:
-                            shard.requestPasswordReset(
-                              _emailController.text.trim(),
-                            );
-                        }
-                      },
-                      onGoogle: shard.startGoogleAuth,
-                      onResendVerification: () => shard.resendVerificationEmail(
-                        _emailController.text.trim(),
-                      ),
-                    ),
+                  ),
                 ],
               ),
             ),
@@ -161,98 +161,78 @@ class _AuthCard extends StatelessWidget {
       _AuthMode.forgotPassword => 'Mandar enlace',
     };
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 20,
-            offset: Offset(0, 8),
+    return HeroCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _ModeChip(
+                label: 'Entrar',
+                selected: mode == _AuthMode.login,
+                onTap: () => onModeChanged(_AuthMode.login),
+              ),
+              _ModeChip(
+                label: 'Registro',
+                selected: mode == _AuthMode.register,
+                onTap: () => onModeChanged(_AuthMode.register),
+              ),
+              _ModeChip(
+                label: 'Olvidé mi password',
+                selected: mode == _AuthMode.forgotPassword,
+                onTap: () => onModeChanged(_AuthMode.forgotPassword),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ModeChip(
-                  label: 'Entrar',
-                  selected: mode == _AuthMode.login,
-                  onTap: () => onModeChanged(_AuthMode.login),
-                ),
-                _ModeChip(
-                  label: 'Registro',
-                  selected: mode == _AuthMode.register,
-                  onTap: () => onModeChanged(_AuthMode.register),
-                ),
-                _ModeChip(
-                  label: 'Olvidé mi password',
-                  selected: mode == _AuthMode.forgotPassword,
-                  onTap: () => onModeChanged(_AuthMode.forgotPassword),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            if (mode == _AuthMode.register) ...[
-              _Field(label: 'Nombre', controller: nameController),
-              const SizedBox(height: 12),
-            ],
+          const SizedBox(height: 22),
+          if (mode == _AuthMode.register) ...[
+            _Field(label: 'Nombre', controller: nameController),
+            const SizedBox(height: 12),
+          ],
+          _Field(
+            label: 'Correo',
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+          ),
+          if (mode != _AuthMode.forgotPassword) ...[
+            const SizedBox(height: 12),
             _Field(
-              label: 'Correo',
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
+              label: 'Contraseña',
+              controller: passwordController,
+              obscureText: true,
             ),
-            if (mode != _AuthMode.forgotPassword) ...[
-              const SizedBox(height: 12),
-              _Field(
-                label: 'Contraseña',
-                controller: passwordController,
-                obscureText: true,
-              ),
-            ],
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FButton(
-                onPress: isBusy ? null : onSubmit,
-                child: Text(submitLabel),
-              ),
+          ],
+          const SizedBox(height: 20),
+          PillButton.primary(
+            label: submitLabel,
+            onPressed: isBusy ? null : onSubmit,
+            busy: isBusy,
+          ),
+          if (mode != _AuthMode.forgotPassword) ...[
+            const SizedBox(height: 12),
+            PillButton.surface(
+              label: 'Continuar con Google',
+              onPressed: isBusy ? null : onGoogle,
+              expand: true,
             ),
             const SizedBox(height: 12),
-            if (mode != _AuthMode.forgotPassword) ...[
-              SizedBox(
-                width: double.infinity,
-                child: FButton(
-                  variant: FButtonVariant.outline,
-                  onPress: isBusy ? null : onGoogle,
-                  child: const Text('Continuar con Google'),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: GestureDetector(
-                  onTap: isBusy ? null : onResendVerification,
-                  child: const Text(
-                    'Reenviar correo de verificación',
-                    style: TextStyle(
-                      color: primaryGreen,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: isBusy ? null : onResendVerification,
+                child: Text(
+                  'Reenviar correo de verificación',
+                  style: PTypography.label.copyWith(
+                    color: primaryGreen,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -273,49 +253,30 @@ class _ResetPasswordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Elige tu nueva contraseña',
-              style: TextStyle(
-                color: ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _Field(
-              label: 'Nueva contraseña',
-              controller: controller,
-              obscureText: true,
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FButton(
-                onPress: isBusy ? null : onSubmit,
-                child: const Text('Guardar contraseña'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FButton(
-                variant: FButtonVariant.outline,
-                onPress: isBusy ? null : onCancel,
-                child: const Text('Cancelar'),
-              ),
-            ),
-          ],
-        ),
+    return HeroCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Elige tu nueva contraseña', style: PTypography.title),
+          const SizedBox(height: 14),
+          _Field(
+            label: 'Nueva contraseña',
+            controller: controller,
+            obscureText: true,
+          ),
+          const SizedBox(height: 18),
+          PillButton.primary(
+            label: 'Guardar contraseña',
+            onPressed: isBusy ? null : onSubmit,
+            busy: isBusy,
+          ),
+          const SizedBox(height: 10),
+          PillButton.surface(
+            label: 'Cancelar',
+            onPressed: isBusy ? null : onCancel,
+            expand: true,
+          ),
+        ],
       ),
     );
   }
@@ -346,9 +307,8 @@ class _ModeChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Text(
             label,
-            style: TextStyle(
+            style: PTypography.label.copyWith(
               color: selected ? primaryGreen : inkMuted,
-              fontSize: 13,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -377,17 +337,27 @@ class _Field extends StatelessWidget {
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
+      style: PTypography.body,
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: PTypography.label.copyWith(color: inkMuted),
         filled: true,
         fillColor: warmSurface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: borderSubtle),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: borderSubtle),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: primaryGreen, width: 1.4),
         ),
       ),
     );

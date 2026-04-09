@@ -9,6 +9,7 @@ import '../core/app_scope.dart';
 import '../core/session/app_session.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/green_tokens.dart';
+import '../core/theme/typography.dart';
 import '../core/widgets/mobile_frame.dart';
 import 'router.dart';
 
@@ -52,6 +53,7 @@ class _AppState extends State<App> {
               brightness: Brightness.light,
             ),
             scaffoldBackgroundColor: warmSurface,
+            textTheme: PTypography.textTheme(),
             useMaterial3: true,
           ),
           routerConfig: _router,
@@ -62,15 +64,31 @@ class _AppState extends State<App> {
             GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
-          builder: (context, child) => FTheme(
-            data: fTheme,
-            child: Material(
-              type: MaterialType.transparency,
-              child: MobileFrame(child: child!),
+          builder: (context, child) => ScrollConfiguration(
+            behavior: const _NoScrollbarScrollBehavior(),
+            child: FTheme(
+              data: fTheme,
+              child: Material(
+                type: MaterialType.transparency,
+                child: MobileFrame(child: child!),
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
+
+/// Hides platform scrollbars while keeping scrolling; see [ThemeData.scrollBehavior].
+class _NoScrollbarScrollBehavior extends MaterialScrollBehavior {
+  const _NoScrollbarScrollBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
 }

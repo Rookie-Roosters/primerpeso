@@ -10,9 +10,13 @@ import 'package:shard/shard.dart';
 import '../../../core/agui/agui_client.dart';
 import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
+import '../../../core/theme/typography.dart';
+import '../../../core/ui/pill_button.dart';
+import '../../../core/ui/voice_orb.dart';
 import '../../../gen/primerpeso/agent/v1/agent.connect.client.dart';
 import '../../../gen/primerpeso/documents/v1/documents.pb.dart' as documentsv1;
 import '../data/chat_repository.dart';
+import '../domain/chat_message.dart';
 import '../domain/chat_state.dart';
 import '../shards/chat_shard.dart';
 import 'widgets/chat_bubble.dart';
@@ -32,6 +36,15 @@ const _ledgerMutationTools = {
   'update_movement',
   'delete_movement',
   'undo_last_registration',
+  'create_apartado',
+  'update_apartado',
+  'delete_apartado',
+  'create_financial_goal',
+  'update_financial_goal',
+  'delete_financial_goal',
+  'create_recurring_payment_reminder',
+  'update_recurring_payment_reminder',
+  'delete_recurring_payment_reminder',
 };
 
 const _shellPaths = {'/tracker', '/chat', '/score'};
@@ -74,14 +87,47 @@ class _ChatSurface extends StatefulWidget {
 class _ChatSurfaceState extends State<_ChatSurface> {
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _composerController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   bool _isUploadingAttachment = false;
   String? _uploadError;
+  int _lastItemCount = 0;
 
   late final AgUiClient _agUi = ConnectAgUiClient(
     client: widget.agentClient,
     deviceIdProvider: () => widget.deviceId,
   );
+
+  /// Captured during `ShardProvider.create` so other parts of the surface
+  /// (e.g. the pending-message draining `ValueListenableBuilder`) can talk
+  /// to the shard without going through the inherited widget.
+  ChatShard? _shard;
+
+  void _scheduleScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  /// Drains a pending question pushed by another screen (e.g. the tracker
+  /// insight banner). Runs after build so calling `shard.send` is safe.
+  void _maybeConsumePendingMessage(String? text) {
+    if (text == null) return;
+    final shard = _shard;
+    if (shard == null) return;
+    final services = AppScope.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Clear FIRST so a slow shard.send can't double-fire on a rebuild.
+      services.pendingChatMessage.value = null;
+      shard.send(text);
+    });
+  }
 
   void _handleNavigate(String toolName, Map<String, dynamic> args) {
     if (!mounted) return;
@@ -110,24 +156,24 @@ class _ChatSurfaceState extends State<_ChatSurface> {
       context: context,
       backgroundColor: surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (context) => SafeArea(
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(FIcons.camera),
-              title: const Text('Tomar foto'),
+              leading: const Icon(FIcons.camera, color: primaryGreen),
+              title: Text('Tomar foto', style: PTypography.bodyStrong),
               onTap: () => Navigator.of(context).pop(_AttachmentSource.camera),
             ),
             ListTile(
-              leading: const Icon(FIcons.image),
-              title: const Text('Elegir imagen'),
+              leading: const Icon(FIcons.image, color: primaryGreen),
+              title: Text('Elegir imagen', style: PTypography.bodyStrong),
               onTap: () => Navigator.of(context).pop(_AttachmentSource.gallery),
             ),
             ListTile(
-              leading: const Icon(FIcons.file),
-              title: const Text('Subir PDF'),
+              leading: const Icon(FIcons.file, color: primaryGreen),
+              title: Text('Subir PDF', style: PTypography.bodyStrong),
               onTap: () => Navigator.of(context).pop(_AttachmentSource.pdf),
             ),
           ],
@@ -204,13 +250,15 @@ class _ChatSurfaceState extends State<_ChatSurface> {
   @override
   void dispose() {
     _composerController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final services = AppScope.of(context);
     return ShardProvider<ChatShard>(
-      create: () => ChatShard(
+      create: () => _shard ??= ChatShard(
         repository: ChatRepository(
           client: _agUi,
           threadId: 'thread-${widget.profileId}',
@@ -275,17 +323,86 @@ class _ChatSurfaceState extends State<_ChatSurface> {
               description:
                   'Deshace el último movimiento registrado por petición del usuario.',
             ),
+            AgUiToolDefinition(
+              name: 'create_apartado',
+              description: 'Crea un apartado de ahorro.',
+            ),
+            AgUiToolDefinition(
+              name: 'get_apartado',
+              description: 'Consulta un apartado por ID.',
+            ),
+            AgUiToolDefinition(
+              name: 'list_apartados',
+              description: 'Lista apartados activos.',
+            ),
+            AgUiToolDefinition(
+              name: 'update_apartado',
+              description: 'Actualiza un apartado existente.',
+            ),
+            AgUiToolDefinition(
+              name: 'delete_apartado',
+              description: 'Elimina (soft-delete) un apartado.',
+            ),
+            AgUiToolDefinition(
+              name: 'create_financial_goal',
+              description: 'Crea una meta financiera.',
+            ),
+            AgUiToolDefinition(
+              name: 'get_financial_goal',
+              description: 'Consulta una meta financiera por ID.',
+            ),
+            AgUiToolDefinition(
+              name: 'list_financial_goals',
+              description: 'Lista metas financieras activas.',
+            ),
+            AgUiToolDefinition(
+              name: 'update_financial_goal',
+              description: 'Actualiza una meta financiera existente.',
+            ),
+            AgUiToolDefinition(
+              name: 'delete_financial_goal',
+              description: 'Elimina (soft-delete) una meta financiera.',
+            ),
+            AgUiToolDefinition(
+              name: 'create_recurring_payment_reminder',
+              description: 'Crea un recordatorio de pago recurrente.',
+            ),
+            AgUiToolDefinition(
+              name: 'get_recurring_payment_reminder',
+              description: 'Consulta un recordatorio recurrente por ID.',
+            ),
+            AgUiToolDefinition(
+              name: 'list_recurring_payment_reminders',
+              description: 'Lista recordatorios recurrentes activos.',
+            ),
+            AgUiToolDefinition(
+              name: 'update_recurring_payment_reminder',
+              description: 'Actualiza un recordatorio recurrente.',
+            ),
+            AgUiToolDefinition(
+              name: 'delete_recurring_payment_reminder',
+              description: 'Elimina (soft-delete) un recordatorio recurrente.',
+            ),
           ],
         ),
         onNavigate: _handleNavigate,
       ),
-      child: ColoredBox(
-        color: warmSurface,
-        child: Column(
-          children: [
-            Expanded(
-              child: ColoredBox(
-                color: chatCanvas,
+      child: ValueListenableBuilder<String?>(
+        valueListenable: services.pendingChatMessage,
+        builder: (context, pending, child) {
+          // A non-null pending message means another screen (e.g. tracker
+          // insight banner) wants Peso to answer something specific. Drain
+          // it on the next frame so the in-flight build finishes first.
+          if (pending != null) {
+            _maybeConsumePendingMessage(pending);
+          }
+          return child!;
+        },
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Expanded(
                 child: ShardBuilder<ChatShard, ChatState>(
                   builder: (context, state) {
                     final shard = ShardProvider.of<ChatShard>(
@@ -293,41 +410,30 @@ class _ChatSurfaceState extends State<_ChatSurface> {
                       listen: false,
                     );
                     final items = [
-                      ...state.messages,
+                      ...state.messages.where((m) => m.role != ChatRole.tool),
                       if (state.draftAssistant != null) state.draftAssistant!,
                     ];
+                    if (items.length != _lastItemCount) {
+                      _lastItemCount = items.length;
+                      _scheduleScrollToBottom();
+                    }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        ColoredBox(
-                          color: warmSurface,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const ChatHeader(),
-                              Container(
-                                height: 1,
-                                color: borderSubtle,
-                              ),
-                            ],
-                          ),
-                        ),
+                        const ChatHeader(),
+                        const SizedBox(height: 8),
                         Expanded(
                           child: items.isEmpty
-                              ? SingleChildScrollView(
-                                  child: _EmptyChatHint(
-                                    onSend: (text) => _send(shard, text),
-                                  ),
+                              ? _EmptyChatHint(
+                                  onSend: (text) => _send(shard, text),
+                                  isStreaming: state.isStreaming,
                                 )
                               : ListView.builder(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.only(bottom: 16),
                                   itemCount: items.length,
-                                  itemBuilder: (context, i) => ChatBubble(
-                                    message: items[i],
-                                  ),
+                                  itemBuilder: (context, i) =>
+                                      ChatBubble(message: items[i]),
                                 ),
                         ),
                       ],
@@ -335,34 +441,31 @@ class _ChatSurfaceState extends State<_ChatSurface> {
                   },
                 ),
               ),
-            ),
-            ShardBuilder<ChatShard, ChatState>(
-              buildWhen: (a, b) => a.errorMessage != b.errorMessage,
-              builder: (context, state) {
-                final err = state.errorMessage;
-                if (err == null) return const SizedBox.shrink();
-                return Padding(
+              ShardBuilder<ChatShard, ChatState>(
+                buildWhen: (a, b) => a.errorMessage != b.errorMessage,
+                builder: (context, state) {
+                  final err = state.errorMessage;
+                  if (err == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: FAlert(
+                      variant: FAlertVariant.destructive,
+                      title: const Text('No pude responder'),
+                      subtitle: Text(err),
+                    ),
+                  );
+                },
+              ),
+              if (_uploadError != null)
+                Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: FAlert(
                     variant: FAlertVariant.destructive,
-                    title: const Text('No pude responder'),
-                    subtitle: Text(err),
+                    title: const Text('No pude subir el archivo'),
+                    subtitle: Text(_uploadError!),
                   ),
-                );
-              },
-            ),
-            if (_uploadError != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: FAlert(
-                  variant: FAlertVariant.destructive,
-                  title: const Text('No pude subir el archivo'),
-                  subtitle: Text(_uploadError!),
                 ),
-              ),
-            ColoredBox(
-              color: warmSurface,
-              child: ShardBuilder<ChatShard, ChatState>(
+              ShardBuilder<ChatShard, ChatState>(
                 buildWhen: (a, b) => a.runStatus != b.runStatus,
                 builder: (context, state) {
                   final shard = ShardProvider.of<ChatShard>(
@@ -378,8 +481,8 @@ class _ChatSurfaceState extends State<_ChatSurface> {
                   );
                 },
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -421,9 +524,10 @@ String _currentRoute(BuildContext context) {
 }
 
 class _EmptyChatHint extends StatelessWidget {
-  const _EmptyChatHint({required this.onSend});
+  const _EmptyChatHint({required this.onSend, required this.isStreaming});
 
   final void Function(String) onSend;
+  final bool isStreaming;
 
   static const _suggestions = [
     'Recordatorios',
@@ -435,87 +539,39 @@ class _EmptyChatHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Peso avatar
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: lightGreenTint,
-              borderRadius: BorderRadius.circular(24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(child: VoiceOrb(listening: isStreaming)),
+            const SizedBox(height: 28),
+            Text(
+              'Hola, ¿en qué\nte ayudo hoy?',
+              textAlign: TextAlign.center,
+              style: PTypography.display.copyWith(fontSize: 36),
             ),
-            child: const Padding(
-              padding: EdgeInsets.all(20),
-              child: Icon(FIcons.bot, size: 40, color: primaryGreen),
+            const SizedBox(height: 12),
+            Text(
+              'Recordatorios, metas, movimientos o una duda: elige un atajo o escribe lo que necesites.',
+              textAlign: TextAlign.center,
+              style: PTypography.body.copyWith(color: inkMuted),
             ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Hola, soy Peso.',
-            style: TextStyle(
-              color: ink,
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Recordatorios, metas, movimientos o una duda:\nelige un atajo o escribe lo que necesites.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: inkMuted, fontSize: 15, height: 1.5),
-          ),
-          const SizedBox(height: 32),
-          ..._suggestions.map(
-            (text) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _SuggestionChip(text: text, onTap: () => onSend(text)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SuggestionChip extends StatelessWidget {
-  const _SuggestionChip({required this.text, required this.onTap});
-
-  final String text;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderSubtle, width: 1.5),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  text,
-                  style: const TextStyle(
-                    color: ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    height: 1.3,
-                  ),
+            const SizedBox(height: 28),
+            ..._suggestions.map(
+              (text) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PillButton.surface(
+                  label: text,
+                  trailing: FIcons.chevronRight,
+                  expand: true,
+                  onPressed: () => onSend(text),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(FIcons.chevronRight, size: 16, color: inkMuted),
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );

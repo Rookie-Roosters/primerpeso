@@ -131,15 +131,8 @@ class ChatShard extends Shard<ChatState> {
             addError(e, st);
           }
         }
-        final toolMessage = ChatMessage(
-          id: 't-$toolCallId',
-          role: ChatRole.tool,
-          content: raw,
-          toolName: name,
-        );
-        emit(state.copyWith(messages: [...state.messages, toolMessage]));
         // Fire-and-forget: navigation is a side effect, never blocks the
-        // event loop.
+        // event loop. Tool calls are not shown as chat bubbles.
         onNavigate(name, args);
 
       case StateDelta(:final patch):

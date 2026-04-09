@@ -48,6 +48,8 @@ frontend/android/app/release
 .env
 backend/.env
 frontend/.env
+scripts/digitalocean/api.local.env
+scripts/digitalocean/web.local.env
 
 # Go / backend artifacts
 backend/bin/

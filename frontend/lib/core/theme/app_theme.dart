@@ -6,12 +6,17 @@
 import 'package:forui/forui.dart';
 
 import 'green_tokens.dart';
+import 'typography.dart';
 
 /// Builds the project's `FThemeData`.
 ///
 /// Starts from Forui's built-in `green.light` palette and overrides the
 /// primary tone toward our deeper forest brand green so headers, primary
 /// buttons and accents feel cohesive with the reference UI.
+///
+/// Also injects Inter (loaded via `google_fonts`) into every typography slot
+/// so Forui buttons, alerts, text fields and inputs share the same font as
+/// the rest of the app.
 FThemeData buildAppTheme() {
   final base = FThemes.green.light;
   return base.copyWith(
@@ -19,5 +24,6 @@ FThemeData buildAppTheme() {
       primary: primaryGreen,
       primaryForeground: surface,
     ),
+    typography: PTypography.forui(base.typography),
   );
 }

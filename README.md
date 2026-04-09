@@ -121,9 +121,8 @@ Important:
 - `make compose-up` already starts a backend container on port `8080`. Do not
   run `make backend-run` or `make backend-run-local` at the same time unless you
   change ports.
-- `make backend-run-local` uses the non-`kreuzberg` build, so receipt upload
-  works but OCR falls back to the stub extractor. For real OCR validation, use
-  the Dockerized backend build.
+- `make backend-run-local` uses your host OCR dependencies (`tesseract` +
+  language data). If OCR fails locally, verify those packages are installed.
 
 ## Run The Frontend
 

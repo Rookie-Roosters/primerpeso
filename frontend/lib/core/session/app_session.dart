@@ -4,10 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppSession extends ChangeNotifier {
-  AppSession._({
-    required this.deviceId,
-    required bool onboardingCompleted,
-  }) : _onboardingCompleted = onboardingCompleted;
+  AppSession._({required this.deviceId, required bool onboardingCompleted})
+    : _onboardingCompleted = onboardingCompleted;
 
   static const _deviceIdKey = 'primerpeso.device_id';
   static const _onboardingCompletedKey = 'primerpeso.onboarding_completed';

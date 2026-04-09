@@ -5,6 +5,11 @@ import 'package:forui/forui.dart';
 
 import '../../../core/app_scope.dart';
 import '../../../core/theme/green_tokens.dart';
+import '../../../core/theme/typography.dart';
+import '../../../core/ui/bar_chart.dart';
+import '../../../core/ui/hero_card.dart';
+import '../../../core/ui/pill_stat.dart';
+import '../../../core/ui/screen_header.dart';
 import '../../../gen/primerpeso/finance/v1/finance.pb.dart' as financev1;
 
 /// Criterio score screen — arc gauge + factor breakdown cards.
@@ -13,43 +18,18 @@ class ScoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: warmSurface,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 22, 24, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Tu score',
-                    style: TextStyle(
-                      color: ink,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.8,
-                      height: 1.0,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Criterio de salud financiera',
-                    style: TextStyle(
-                      color: inkMuted,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 28),
-            const Expanded(child: _ScoreSummaryBody()),
-          ],
-        ),
+    return const SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ScreenHeader(
+            title: 'Tu score',
+            subtitle: 'Criterio de salud financiera',
+          ),
+          SizedBox(height: 20),
+          Expanded(child: _ScoreSummaryBody()),
+        ],
       ),
     );
   }
@@ -86,88 +66,155 @@ class _ScoreSummaryBody extends StatelessWidget {
           100,
         )).round();
         final scoreRatio = normalizedScore / 100;
+        final history = _historyFromFactors(summary.factors, normalizedScore);
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: double.infinity,
-              height: 190,
-              child: CustomPaint(
-                painter: _ScoreGaugePainter(score: scoreRatio),
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              HeroCard(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     Text(
-                      '$normalizedScore',
-                      style: const TextStyle(
-                        color: ink,
-                        fontSize: 60,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -3,
-                        height: 1.0,
+                      'Salud financiera',
+                      style: PTypography.label.copyWith(color: inkMuted),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 220,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: _ScoreGaugePainter(score: scoreRatio),
+                            ),
+                          ),
+                          // Number + label live INSIDE the arc curve. The
+                          // painter draws the arc with its baseline near 88%
+                          // of the height; sitting the text at bottom: 30
+                          // tucks it just above that baseline so it never
+                          // overlaps the stroke.
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 30,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '$normalizedScore',
+                                  textAlign: TextAlign.center,
+                                  style: PTypography.display.copyWith(
+                                    fontSize: 56,
+                                    letterSpacing: -2,
+                                    height: 1,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '${summary.score} pts',
+                                  textAlign: TextAlign.center,
+                                  style: PTypography.label.copyWith(
+                                    color: inkMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${summary.score} en escala backend',
-                      style: const TextStyle(
-                        color: inkMuted,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                      ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        if (normalizedScore >= 70)
+                          const PillStat.success('Salud sólida')
+                        else if (normalizedScore >= 40)
+                          const PillStat.neutral('En equilibrio')
+                        else
+                          const PillStat.danger('Atención'),
+                        PillStat.neutral('${summary.factors.length} factores'),
+                      ],
                     ),
-                    const SizedBox(height: 24),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 28),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                'Factores',
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              const SizedBox(height: 18),
+              HeroCard(
                 child: Column(
-                  children: summary.factors.isEmpty
-                      ? const [
-                          _FactorCard(
-                            label: 'Sin factores todavía',
-                            value:
-                                'Confirma tus primeros gastos para ver el detalle del score.',
-                          ),
-                        ]
-                      : summary.factors
-                            .map(
-                              (factor) => Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: _FactorCard(
-                                  label: factor.title,
-                                  value: factor.explanation,
-                                  badge: _formatDelta(factor.delta),
-                                ),
-                              ),
-                            )
-                            .toList(),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Histórico mensual', style: PTypography.subtitle),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Vista preliminar — el backend aún no expone histórico.',
+                      style: PTypography.label.copyWith(color: inkMuted),
+                    ),
+                    const SizedBox(height: 18),
+                    MonthBarChart(bars: history),
+                  ],
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 18),
+              Text('Factores', style: PTypography.subtitle),
+              const SizedBox(height: 12),
+              if (summary.factors.isEmpty)
+                const _FactorCard(
+                  label: 'Sin factores todavía',
+                  value:
+                      'Confirma tus primeros gastos para ver el detalle del score.',
+                )
+              else
+                ...summary.factors.map(
+                  (factor) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _FactorCard(
+                      factorKey: factor.key,
+                      label: factor.title,
+                      value: factor.explanation,
+                      delta: factor.delta,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
   }
+}
+
+/// Builds a stub history chart from the factor deltas so the layout has
+/// something to render until the backend exposes a real score history series.
+List<MonthBar> _historyFromFactors(
+  Iterable<financev1.ScoreFactor> factors,
+  int currentScore,
+) {
+  const monthLabels = ['Nov', 'Dic', 'Ene', 'Feb', 'Mar', 'Abr'];
+  if (factors.isEmpty) {
+    return [
+      for (var i = 0; i < monthLabels.length; i++)
+        MonthBar(label: monthLabels[i], percent: currentScore),
+    ];
+  }
+  // Walk back from the current score by accumulating reversed deltas — gives
+  // a plausible 6-bar trend without inventing extra signal.
+  final deltas = factors.map((f) => f.delta).toList();
+  var running = currentScore;
+  final values = <int>[currentScore];
+  for (var i = 0; i < monthLabels.length - 1; i++) {
+    final delta = deltas[i % deltas.length];
+    running = (running - delta).clamp(0, 100);
+    values.insert(0, running);
+  }
+  return [
+    for (var i = 0; i < monthLabels.length; i++)
+      MonthBar(label: monthLabels[i], percent: values[i]),
+  ];
 }
 
 /// Semicircular arc gauge — sweeps from left (π) to right (0) clockwise,
@@ -244,92 +291,79 @@ class _ScoreGaugePainter extends CustomPainter {
   bool shouldRepaint(_ScoreGaugePainter old) => old.score != score;
 }
 
+IconData _factorIconData(String? key) {
+  if (key == null || key.isEmpty) return FIcons.info;
+  return switch (key) {
+    'baseline' => FIcons.layers,
+    'receipt_activity' => FIcons.receipt,
+    'category_coverage' => FIcons.layoutGrid,
+    'spending_concentration' => FIcons.chartPie,
+    _ => FIcons.circleDot,
+  };
+}
+
 class _FactorCard extends StatelessWidget {
   const _FactorCard({
     required this.label,
     required this.value,
-    this.badge = '—',
+    this.factorKey,
+    this.delta,
   });
 
+  final String? factorKey;
   final String label;
   final String value;
-  final String badge;
+  final int? delta;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
+    final badge = _badgeFor(delta);
+    final iconData = _factorIconData(factorKey);
+    return HeroCard.compact(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: lightGreenTint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Center(
+                child: Icon(iconData, size: 22, color: primaryGreen),
+              ),
+            ),
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: lightGreenTint,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const SizedBox(width: 32, height: 32),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: ink,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: -0.1,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: const TextStyle(color: inkMuted, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0F4F2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text(
-                  badge,
-                  style: const TextStyle(
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: PTypography.bodyStrong),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: PTypography.body.copyWith(
                     color: inkMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 12),
+          ?badge,
+        ],
       ),
     );
   }
-}
 
-String _formatDelta(int delta) {
-  if (delta > 0) {
-    return '+$delta';
+  PillStat? _badgeFor(int? delta) {
+    if (delta == null) return null;
+    if (delta > 0) return PillStat.success('+$delta');
+    if (delta < 0) return PillStat.danger('$delta');
+    return const PillStat.neutral('—');
   }
-  return '$delta';
 }
