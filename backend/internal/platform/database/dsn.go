@@ -60,7 +60,7 @@ func EnsureSchema(ctx context.Context, databaseURL, schema string) error {
 	_, err = pool.Exec(ctx, fmt.Sprintf(
 		`CREATE SCHEMA IF NOT EXISTS %s`, quoteIdent(schema)))
 	if err != nil {
-		return fmt.Errorf("create schema %s: %w", schema, err)
+		return fmt.Errorf(`create schema %s: %w (if permission denied, run as DB admin: GRANT CREATE ON DATABASE "<db>" TO "<app_user>"; see scripts/digitalocean/grant-public-fallback.sql)`, schema, err)
 	}
 	return nil
 }
