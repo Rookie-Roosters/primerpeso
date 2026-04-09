@@ -1,0 +1,5 @@
+# Generated proto / connect-rpc code lives here.
+#
+# ConnectRPC wiring is intentionally deferred for the skeleton phase.
+# When the backend `proto/` directory is ready, run `buf generate`
+# (config in `frontend/buf.gen.yaml`) and the output will land here.

@@ -1,0 +1,36 @@
+name: primerpeso
+description: "PrimerPeso — financial decision companion for Mexican youth (by rookieroosters)."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.4
+  flutter: ">=3.41.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # UI
+  forui: ^0.18.0
+  mix: ^2.0.0
+
+  # Routing
+  go_router: ^14.0.0
+
+  # State
+  shard: ^1.0.0
+  shared_preferences: ^2.3.0
+
+  # Networking / AG-UI
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

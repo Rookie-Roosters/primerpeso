@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter Shard State"
+  short_description: "Help with Flutter Shard state tasks"
+  default_prompt: "Use $flutter-shard-state to implement or migrate Flutter state with the shard package."

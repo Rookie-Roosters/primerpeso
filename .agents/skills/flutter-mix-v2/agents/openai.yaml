@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter Mix v2"
+  short_description: "Help with Mix v2 styling, tokens, and variants"
+  default_prompt: "Use $flutter-mix-v2 to style Flutter UIs with Mix v2 (BoxStyler, MixScope, tokens, variants)."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter go_router"
+  short_description: "Help with go_router navigation and shells"
+  default_prompt: "Use $go-router to configure Flutter navigation with go_router (GoRouter, redirects, ShellRoute, deep links)."

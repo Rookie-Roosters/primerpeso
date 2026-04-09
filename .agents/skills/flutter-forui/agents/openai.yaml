@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flutter Forui"
+  short_description: "Help with Forui UI components, theming, and CLI"
+  default_prompt: "Use $flutter-forui to build or refactor Flutter UIs with the Forui library (FTheme, widgets, localization, CLI)."
