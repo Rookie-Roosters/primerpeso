@@ -7,16 +7,19 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/joho/godotenv"
 
 	agentv1connect "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/agent/v1/agentv1connect"
 	documentsv1connect "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/documents/v1/documentsv1connect"
 	financev1connect "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/finance/v1/financev1connect"
 	identityv1connect "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/identity/v1/identityv1connect"
+	savingsv1connect "github.com/Rookie-Roosters/primerpeso/backend/gen/proto/primerpeso/savings/v1/savingsv1connect"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/agent"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/documents"
 	documentsstore "github.com/Rookie-Roosters/primerpeso/backend/internal/documents/store"
@@ -29,11 +32,17 @@ import (
 	cryptox "github.com/Rookie-Roosters/primerpeso/backend/internal/platform/crypto"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/platform/database"
 	"github.com/Rookie-Roosters/primerpeso/backend/internal/platform/httpx"
+	"github.com/Rookie-Roosters/primerpeso/backend/internal/savings"
+	savingsstore "github.com/Rookie-Roosters/primerpeso/backend/internal/savings/store"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Load .env when present (gitignored). Try cwd, then backend/ when running from repo root.
+	_ = godotenv.Load(".env")
+	_ = godotenv.Load("backend/.env")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -41,6 +50,19 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}))
+
+	if strings.TrimSpace(cfg.DatabaseSchema) != "" {
+		if err := database.EnsureSchema(ctx, cfg.DatabaseURL, cfg.DatabaseSchema); err != nil {
+			logger.Error("failed to ensure database schema", "error", err)
+			os.Exit(1)
+		}
+		u, err := database.WithSearchPath(cfg.DatabaseURL, cfg.DatabaseSchema)
+		if err != nil {
+			logger.Error("database search path", "error", err)
+			os.Exit(1)
+		}
+		cfg.DatabaseURL = u
+	}
 
 	pool, err := database.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -82,8 +104,9 @@ func main() {
 	identityService := identity.NewService(cfg, logger, identityModule, identitystore.New(pool), cryptoService)
 	documentsService := documents.NewService(logger, documentsstore.New(pool), cryptoService, blobStore, documents.NewExtractor(cfg))
 	financeService := finance.NewService(logger, financestore.New(pool), cryptoService, documentsService)
+	savingsService := savings.NewService(logger, savingsstore.New(pool))
 	documentsService.SetExpenseRegistrar(financeService)
-	agentService := agent.NewService(ctx, cfg, logger, financeService, documentsService)
+	agentService := agent.NewService(ctx, cfg, logger, financeService, documentsService, savingsService)
 
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
@@ -110,11 +133,13 @@ func main() {
 	identityPath, identityHandler := identityv1connect.NewIdentityServiceHandler(identityService)
 	financePath, financeHandler := financev1connect.NewFinanceServiceHandler(financeService)
 	documentsPath, documentsHandler := documentsv1connect.NewReceiptServiceHandler(documentsService)
+	savingsPath, savingsHandler := savingsv1connect.NewSavingsServiceHandler(savingsService)
 	agentPath, agentHandler := agentv1connect.NewAgentServiceHandler(agentService)
 
 	router.Handle(identityPath+"*", identityHandler)
 	router.Handle(financePath+"*", financeHandler)
 	router.Handle(documentsPath+"*", documentsHandler)
+	router.Handle(savingsPath+"*", savingsHandler)
 	router.Handle(agentPath+"*", agentHandler)
 
 	server := &http.Server{

@@ -1,0 +1,3 @@
+-- If DATABASE_SCHEMA=primerpeso still fails (no permission to CREATE SCHEMA), run as DB admin
+-- in the DigitalOcean database console, then redeploy:
+--   GRANT ALL PRIVILEGES ON SCHEMA public TO "your-app-user-from-DATABASE_URL";

@@ -14,6 +14,7 @@ type Config struct {
 	PublicBaseURL string `env:"PUBLIC_BASE_URL" envDefault:"http://localhost:8080"`
 
 	DatabaseURL    string `env:"DATABASE_URL,required"`
+	DatabaseSchema string `env:"DATABASE_SCHEMA"`
 	AutoMigrateApp bool   `env:"AUTO_MIGRATE_APP" envDefault:"true"`
 
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:"," envDefault:"http://localhost:3000,http://localhost:8080"`
@@ -34,6 +35,7 @@ type Config struct {
 	HashKey   string `env:"HASH_KEY" envDefault:"primerpeso-hash-key-change-me"`
 
 	MinIOEndpoint  string `env:"MINIO_ENDPOINT" envDefault:"localhost:9000"`
+	MinIORegion    string `env:"MINIO_REGION"`
 	MinIOAccessKey string `env:"MINIO_ACCESS_KEY" envDefault:"minioadmin"`
 	MinIOSecretKey string `env:"MINIO_SECRET_KEY" envDefault:"minioadmin"`
 	MinIOBucket    string `env:"MINIO_BUCKET" envDefault:"primerpeso-receipts"`
